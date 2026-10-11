@@ -23,5 +23,15 @@ jobs:
       # which hardware they came from.
       - run: npm run bench:ci
       # Fails if a figure published in the README has drifted away from what
-      # the tools actually produce.
+      # the tools actually produce. Covers the inline marker spans.
       - run: npm run benchlock:check
+
+      # Covers the generated tables, which the marker spans do not reach. The
+      # README claims every table is rendered from the committed measurements
+      # rather than typed by hand; regenerating them and refusing any diff is
+      # what turns that from a claim into something enforced. Without this step
+      # a hand-edited row in the headline fuzz table would survive CI, which is
+      # exactly the number the repository is sold on.
+      - run: npm run sync:readme
+      - name: README tables must match the committed measurements
+        run: git diff --exit-code -- README.md
