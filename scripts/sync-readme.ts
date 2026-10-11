@@ -19,7 +19,8 @@ interface NativeCell {
   status: "measured" | "killed" | "extrapolated" | "skipped";
   ms?: number;
   cutoffMs?: number;
-  estimateMs?: number;
+  log10EstimateMs?: number;
+  growthPerStep?: number;
 }
 
 interface Row {
@@ -35,6 +36,7 @@ interface Results {
   node: string;
   hardware: { cpu: string; memoryBytes: number | null };
   cutoffMs: number;
+  redosCases: { id: string; pattern: string; input: string }[];
   redos: Row[];
   ordinary: {
     caseId: string;
@@ -73,6 +75,19 @@ function ms(value: number): string {
   return `${(value * 1000).toFixed(1)} \u00b5s`;
 }
 
+/**
+ * Renders an estimate that is far past anything a clock can express. These are
+ * labelled, never presented as measurements, and kept in log space because the
+ * value itself does not fit in a double.
+ */
+function extrapolated(log10Ms: number): string {
+  if (log10Ms < 3) return `extrapolated to ~${ms(10 ** log10Ms)}`;
+  const log10Years = log10Ms - Math.log10(1000 * 60 * 60 * 24 * 365.25);
+  if (log10Years < 1) return `extrapolated to ~${ms(10 ** log10Ms)}`;
+  if (log10Years < 6) return `extrapolated to ~${(10 ** log10Years).toPrecision(2)} years`;
+  return `extrapolated to ~10^${Math.round(log10Years)} years`;
+}
+
 function nativeCell(cell: NativeCell, cutoffMs: number): string {
   switch (cell.status) {
     case "measured":
@@ -80,7 +95,7 @@ function nativeCell(cell: NativeCell, cutoffMs: number): string {
     case "killed":
       return `**> ${cutoffMs} ms**, killed`;
     case "extrapolated":
-      return `**> ${cutoffMs} ms**, extrapolated to ~${ms(cell.estimateMs ?? 0)}`;
+      return `**> ${cutoffMs} ms**, ${extrapolated(cell.log10EstimateMs ?? 0)}`;
     default:
       return "not run";
   }
@@ -112,10 +127,13 @@ function redosTable(results: Results): string {
     "| pattern | input length | pikevm | native `RegExp` | threads pikevm admitted |",
     "| --- | ---: | ---: | ---: | ---: |",
   ];
-  for (const rows of byCase.values()) {
+  for (const [caseId, rows] of byCase) {
     const picked = pickSizes(rows);
+    // The counted case rebuilds its pattern for each size, so the group label
+    // is the generic form rather than whichever row happens to come first.
+    const generic = results.redosCases.find((c) => c.id === caseId)?.pattern ?? rows[0].pattern;
     picked.forEach((r, i) => {
-      const label = i === 0 ? `\`${r.pattern.replace(/\|/g, "\\|")}\`` : "";
+      const label = i === 0 ? `\`${generic.replace(/\|/g, "\\|")}\`` : "";
       lines.push(
         `| ${label} | ${r.ours.inputLength.toLocaleString()} | ${ms(r.ours.ms)} | ` +
           `${nativeCell(r.native, results.cutoffMs)} | ${r.ours.adds.toLocaleString()} |`,

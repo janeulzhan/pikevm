@@ -28,7 +28,13 @@ const startedAt = performance.now();
 type NativeCell =
   | { status: "measured"; ms: number; result: boolean }
   | { status: "killed"; cutoffMs: number }
-  | { status: "extrapolated"; cutoffMs: number; estimateMs: number; growthPerStep: number }
+  | {
+      status: "extrapolated";
+      cutoffMs: number;
+      /** Base ten logarithm, because the honest estimate overflows a double. */
+      log10EstimateMs: number;
+      growthPerStep: number;
+    }
   | { status: "skipped"; reason: string };
 
 interface OursCell {
@@ -56,10 +62,10 @@ function sysctl(name: string): string {
 }
 
 /** Median of `repeats` timed runs, after a warm-up run. */
-function timeOurs(pattern: string, spec: InputSpec, repeats = 7): OursCell {
+function timeOurs(pattern: string, spec: InputSpec, repeats = 9): OursCell {
   const re = new Regex(pattern);
   const subject = buildInput(spec);
-  re.test(subject);
+  for (let i = 0; i < 3; i++) re.test(subject);
   const samples: number[] = [];
   for (let i = 0; i < repeats; i++) {
     const t = performance.now();
@@ -135,9 +141,13 @@ for (const c of REDOS_CASES) {
           : {
               status: "extrapolated",
               cutoffMs: CUTOFF_MS,
-              estimateMs:
-                measured[measured.length - 1].ms *
-                growth ** (n - measured[measured.length - 1].n),
+              // Computed in log space on purpose: extending the measured
+              // growth to a hundred thousand characters produces a number with
+              // tens of thousands of digits, which a double cannot hold and
+              // which would silently become Infinity and then null in JSON.
+              log10EstimateMs:
+                Math.log10(measured[measured.length - 1].ms) +
+                (n - measured[measured.length - 1].n) * Math.log10(growth),
               growthPerStep: growth,
             };
     }
@@ -191,6 +201,7 @@ const results = {
     "Wall-clock numbers are measured on the hardware named above and are not " +
     "verified in CI. CI gates the deterministic quantities only: differential " +
     "fuzz agreement, capture span agreement, program sizes and addthread counts.",
+  redosCases: REDOS_CASES.map((c) => ({ id: c.id, pattern: c.pattern, input: c.input })),
   redos: rows,
   ordinary,
   catalogue,

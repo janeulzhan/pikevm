@@ -1,0 +1,908 @@
+{
+  "generatedAt": "2026-10-11T20:31:49.634Z",
+  "node": "v24.19.0",
+  "hardware": {
+    "cpu": "Apple M4",
+    "memoryBytes": 17179869184,
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "cutoffMs": 2000,
+  "note": "Wall-clock numbers are measured on the hardware named above and are not verified in CI. CI gates the deterministic quantities only: differential fuzz agreement, capture span agreement, program sizes and addthread counts.",
+  "redosCases": [
+    {
+      "id": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "input": "\"a\" * n + \"b\""
+    },
+    {
+      "id": "plus-nested",
+      "pattern": "(a+)+$",
+      "input": "\"a\" * n + \"!\""
+    },
+    {
+      "id": "two-plus",
+      "pattern": "(x+x+)+y",
+      "input": "\"x\" * n"
+    },
+    {
+      "id": "counted-optional",
+      "pattern": "^(a?){n}a{n}$",
+      "input": "\"a\" * (n - 1)"
+    }
+  ],
+  "redos": [
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 16,
+      "ours": {
+        "ms": 0.027625000000000455,
+        "result": false,
+        "adds": 201,
+        "progLen": 14,
+        "inputLength": 17
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.09891700000000014,
+        "result": false
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 20,
+      "ours": {
+        "ms": 0.010750000000001592,
+        "result": false,
+        "adds": 249,
+        "progLen": 14,
+        "inputLength": 21
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.5563750000000027,
+        "result": false
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 24,
+      "ours": {
+        "ms": 0.004333000000002585,
+        "result": false,
+        "adds": 297,
+        "progLen": 14,
+        "inputLength": 25
+      },
+      "native": {
+        "status": "measured",
+        "ms": 3.8202909999999974,
+        "result": false
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 28,
+      "ours": {
+        "ms": 0.0049999999999954525,
+        "result": false,
+        "adds": 345,
+        "progLen": 14,
+        "inputLength": 29
+      },
+      "native": {
+        "status": "measured",
+        "ms": 25.462584000000007,
+        "result": false
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 32,
+      "ours": {
+        "ms": 0.004083000000036918,
+        "result": false,
+        "adds": 393,
+        "progLen": 14,
+        "inputLength": 33
+      },
+      "native": {
+        "status": "measured",
+        "ms": 185.148208,
+        "result": false
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 36,
+      "ours": {
+        "ms": 0.005084000000010747,
+        "result": false,
+        "adds": 441,
+        "progLen": 14,
+        "inputLength": 37
+      },
+      "native": {
+        "status": "measured",
+        "ms": 1216.660208,
+        "result": false
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 40,
+      "ours": {
+        "ms": 0.004999999999881766,
+        "result": false,
+        "adds": 489,
+        "progLen": 14,
+        "inputLength": 41
+      },
+      "native": {
+        "status": "killed",
+        "cutoffMs": 2000
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 48,
+      "ours": {
+        "ms": 0.006624999999985448,
+        "result": false,
+        "adds": 585,
+        "progLen": 14,
+        "inputLength": 49
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 5.539108325005822,
+        "growthPerStep": 1.6013819107357676
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 1000,
+      "ours": {
+        "ms": 0.1332910000000993,
+        "result": false,
+        "adds": 12009,
+        "progLen": 14,
+        "inputLength": 1001
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 200.21827063580918,
+        "growthPerStep": 1.6013819107357676
+      }
+    },
+    {
+      "caseId": "alt-nested",
+      "pattern": "^(a|aa)+$",
+      "n": 100000,
+      "ours": {
+        "ms": 12.85791700000027,
+        "result": false,
+        "adds": 1200009,
+        "progLen": 14,
+        "inputLength": 100001
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 20445.21519161221,
+        "growthPerStep": 1.6013819107357676
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 16,
+      "ours": {
+        "ms": 0.0016249999998763087,
+        "result": false,
+        "adds": 136,
+        "progLen": 10,
+        "inputLength": 17
+      },
+      "native": {
+        "status": "measured",
+        "ms": 2.6506669999999986,
+        "result": false
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 20,
+      "ours": {
+        "ms": 0.0018749999999272404,
+        "result": false,
+        "adds": 168,
+        "progLen": 10,
+        "inputLength": 21
+      },
+      "native": {
+        "status": "measured",
+        "ms": 40.091375000000006,
+        "result": false
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 24,
+      "ours": {
+        "ms": 0.002375000000029104,
+        "result": false,
+        "adds": 200,
+        "progLen": 10,
+        "inputLength": 25
+      },
+      "native": {
+        "status": "measured",
+        "ms": 665.0130829999999,
+        "result": false
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 28,
+      "ours": {
+        "ms": 0.002791000000797794,
+        "result": false,
+        "adds": 232,
+        "progLen": 10,
+        "inputLength": 29
+      },
+      "native": {
+        "status": "killed",
+        "cutoffMs": 2000
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 32,
+      "ours": {
+        "ms": 0.0032499999997526174,
+        "result": false,
+        "adds": 264,
+        "progLen": 10,
+        "inputLength": 33
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 5.22230520749901,
+        "growthPerStep": 1.9949608497488551
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 36,
+      "ours": {
+        "ms": 0.003416999999899417,
+        "result": false,
+        "adds": 296,
+        "progLen": 10,
+        "inputLength": 37
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 6.422042716552742,
+        "growthPerStep": 1.9949608497488551
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 40,
+      "ours": {
+        "ms": 0.0037089999996169354,
+        "result": false,
+        "adds": 328,
+        "progLen": 10,
+        "inputLength": 41
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 7.621780225606472,
+        "growthPerStep": 1.9949608497488551
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 48,
+      "ours": {
+        "ms": 0.004374999999527063,
+        "result": false,
+        "adds": 392,
+        "progLen": 10,
+        "inputLength": 49
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 10.021255243713934,
+        "growthPerStep": 1.9949608497488551
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 1000,
+      "ours": {
+        "ms": 0.08616600000004837,
+        "result": false,
+        "adds": 8008,
+        "progLen": 10,
+        "inputLength": 1001
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 295.5587823985019,
+        "growthPerStep": 1.9949608497488551
+      }
+    },
+    {
+      "caseId": "plus-nested",
+      "pattern": "(a+)+$",
+      "n": 100000,
+      "ours": {
+        "ms": 8.618874999999207,
+        "result": false,
+        "adds": 800008,
+        "progLen": 10,
+        "inputLength": 100001
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 29989.06213147834,
+        "growthPerStep": 1.9949608497488551
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 16,
+      "ours": {
+        "ms": 0.0019589999992604135,
+        "result": false,
+        "adds": 160,
+        "progLen": 12,
+        "inputLength": 16
+      },
+      "native": {
+        "status": "measured",
+        "ms": 1.1458749999999966,
+        "result": false
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 20,
+      "ours": {
+        "ms": 0.002292000000124972,
+        "result": false,
+        "adds": 200,
+        "progLen": 12,
+        "inputLength": 20
+      },
+      "native": {
+        "status": "measured",
+        "ms": 18.256458000000002,
+        "result": false
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 24,
+      "ours": {
+        "ms": 0.0034580000001369626,
+        "result": false,
+        "adds": 240,
+        "progLen": 12,
+        "inputLength": 24
+      },
+      "native": {
+        "status": "measured",
+        "ms": 288.216708,
+        "result": false
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 28,
+      "ours": {
+        "ms": 0.003416999999899417,
+        "result": false,
+        "adds": 280,
+        "progLen": 12,
+        "inputLength": 28
+      },
+      "native": {
+        "status": "killed",
+        "cutoffMs": 2000
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 32,
+      "ours": {
+        "ms": 0.003916000001481734,
+        "result": false,
+        "adds": 320,
+        "progLen": 12,
+        "inputLength": 32
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 4.860301062392928,
+        "growthPerStep": 1.995596523213001
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 36,
+      "ours": {
+        "ms": 0.004333000000769971,
+        "result": false,
+        "adds": 360,
+        "progLen": 12,
+        "inputLength": 36
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 6.060592016901626,
+        "growthPerStep": 1.995596523213001
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 40,
+      "ours": {
+        "ms": 0.004750000000058208,
+        "result": false,
+        "adds": 400,
+        "progLen": 12,
+        "inputLength": 40
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 7.2608829714103225,
+        "growthPerStep": 1.995596523213001
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 48,
+      "ours": {
+        "ms": 0.005667000001267297,
+        "result": false,
+        "adds": 480,
+        "progLen": 12,
+        "inputLength": 48
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 9.661464880427717,
+        "growthPerStep": 1.995596523213001
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 1000,
+      "ours": {
+        "ms": 0.11566700000003038,
+        "result": false,
+        "adds": 10000,
+        "progLen": 12,
+        "inputLength": 1000
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 295.3307120534976,
+        "growthPerStep": 1.995596523213001
+      }
+    },
+    {
+      "caseId": "two-plus",
+      "pattern": "(x+x+)+y",
+      "n": 100000,
+      "ours": {
+        "ms": 11.66649999999936,
+        "result": false,
+        "adds": 1000000,
+        "progLen": 12,
+        "inputLength": 100000
+      },
+      "native": {
+        "status": "extrapolated",
+        "cutoffMs": 2000,
+        "log10EstimateMs": 30002.53183614375,
+        "growthPerStep": 1.995596523213001
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){14}a{14}$",
+      "n": 14,
+      "ours": {
+        "ms": 0.007708999999522348,
+        "result": false,
+        "adds": 671,
+        "progLen": 89,
+        "inputLength": 13
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.020167000000000712,
+        "result": false
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){16}a{16}$",
+      "n": 16,
+      "ours": {
+        "ms": 0.010374999999839929,
+        "result": false,
+        "adds": 863,
+        "progLen": 101,
+        "inputLength": 15
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.025083999999999662,
+        "result": false
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){18}a{18}$",
+      "n": 18,
+      "ours": {
+        "ms": 0.011416999999710242,
+        "result": false,
+        "adds": 1079,
+        "progLen": 113,
+        "inputLength": 17
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.01837499999999892,
+        "result": false
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){20}a{20}$",
+      "n": 20,
+      "ours": {
+        "ms": 0.016458000000056927,
+        "result": false,
+        "adds": 1319,
+        "progLen": 125,
+        "inputLength": 19
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.019874999999998977,
+        "result": false
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){22}a{22}$",
+      "n": 22,
+      "ours": {
+        "ms": 0.018415999998978805,
+        "result": false,
+        "adds": 1583,
+        "progLen": 137,
+        "inputLength": 21
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.023666999999996108,
+        "result": false
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){24}a{24}$",
+      "n": 24,
+      "ours": {
+        "ms": 0.020709000000351807,
+        "result": false,
+        "adds": 1871,
+        "progLen": 149,
+        "inputLength": 23
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.020457999999997867,
+        "result": false
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){26}a{26}$",
+      "n": 26,
+      "ours": {
+        "ms": 0.02995799999916926,
+        "result": false,
+        "adds": 2183,
+        "progLen": 161,
+        "inputLength": 25
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.020207999999996673,
+        "result": false
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){28}a{28}$",
+      "n": 28,
+      "ours": {
+        "ms": 0.028709000000162632,
+        "result": false,
+        "adds": 2519,
+        "progLen": 173,
+        "inputLength": 27
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.01774999999999949,
+        "result": false
+      }
+    },
+    {
+      "caseId": "counted-optional",
+      "pattern": "^(a?){30}a{30}$",
+      "n": 30,
+      "ours": {
+        "ms": 0.03262499999982538,
+        "result": false,
+        "adds": 2879,
+        "progLen": 185,
+        "inputLength": 29
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.019417000000004236,
+        "result": false
+      }
+    }
+  ],
+  "ordinary": [
+    {
+      "caseId": "literal",
+      "pattern": "needle",
+      "inputLength": 180006,
+      "ours": {
+        "ms": 4.922667000000729,
+        "result": true,
+        "adds": 360021,
+        "progLen": 9,
+        "inputLength": 180006
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.03737499999999727,
+        "result": true
+      },
+      "slowdown": 131.71015384618298
+    },
+    {
+      "caseId": "date",
+      "pattern": "(\\d{4})-(\\d{2})-(\\d{2})",
+      "inputLength": 20010,
+      "ours": {
+        "ms": 0.7892080000001442,
+        "result": true,
+        "adds": 60061,
+        "progLen": 19,
+        "inputLength": 20010
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.03970800000000452,
+        "result": true
+      },
+      "slowdown": 19.87528961418491
+    },
+    {
+      "caseId": "word-run",
+      "pattern": "^[a-z]+$",
+      "inputLength": 20000,
+      "ours": {
+        "ms": 1.1797090000000026,
+        "result": true,
+        "adds": 100005,
+        "progLen": 7,
+        "inputLength": 20000
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.031041999999999348,
+        "result": true
+      },
+      "slowdown": 38.00364022936755
+    },
+    {
+      "caseId": "class-scan",
+      "pattern": "[\\w.]+@[\\w]+\\.[a-z]{2,4}",
+      "inputLength": 20016,
+      "ours": {
+        "ms": 1.1854999999995925,
+        "result": true,
+        "adds": 80092,
+        "progLen": 15,
+        "inputLength": 20016
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.04087499999999977,
+        "result": true
+      },
+      "slowdown": 29.003058103965728
+    },
+    {
+      "caseId": "dot-star",
+      "pattern": "a.*b.*c",
+      "inputLength": 5003,
+      "ours": {
+        "ms": 0.13699999999880674,
+        "result": true,
+        "adds": 10028,
+        "progLen": 12,
+        "inputLength": 5003
+      },
+      "native": {
+        "status": "measured",
+        "ms": 0.021708999999994205,
+        "result": true
+      },
+      "slowdown": 6.310746694865877
+    }
+  ],
+  "catalogue": [
+    {
+      "pattern": "^(a|aa)+$",
+      "n": 40,
+      "inputLength": 41,
+      "ms": 0.005625000001600711,
+      "adds": 489,
+      "progLen": 14
+    },
+    {
+      "pattern": "(a+)+$",
+      "n": 40,
+      "inputLength": 41,
+      "ms": 0.003749999999854481,
+      "adds": 328,
+      "progLen": 10
+    },
+    {
+      "pattern": "(a+)+b",
+      "n": 40,
+      "inputLength": 40,
+      "ms": 0.003833999999187654,
+      "adds": 324,
+      "progLen": 10
+    },
+    {
+      "pattern": "(x+x+)+y",
+      "n": 40,
+      "inputLength": 40,
+      "ms": 0.0049580000013520475,
+      "adds": 400,
+      "progLen": 12
+    },
+    {
+      "pattern": "(a*)*b",
+      "n": 2000,
+      "inputLength": 2000,
+      "ms": 0.29491699999925913,
+      "adds": 28009,
+      "progLen": 18
+    },
+    {
+      "pattern": "(a|a?)+$",
+      "n": 40,
+      "inputLength": 41,
+      "ms": 0.009833999998591025,
+      "adds": 918,
+      "progLen": 30
+    },
+    {
+      "pattern": "([a-zA-Z]+)*$",
+      "n": 40,
+      "inputLength": 41,
+      "ms": 0.004208000000289758,
+      "adds": 374,
+      "progLen": 11
+    },
+    {
+      "pattern": "(a|b|ab)+c",
+      "n": 24,
+      "inputLength": 48,
+      "ms": 0.006957999999940512,
+      "adds": 608,
+      "progLen": 16
+    },
+    {
+      "pattern": "^(\\w+\\s?)*$",
+      "n": 40,
+      "inputLength": 41,
+      "ms": 0.0052080000004934845,
+      "adds": 489,
+      "progLen": 14
+    },
+    {
+      "pattern": "(.*a){20}b",
+      "n": 60,
+      "inputLength": 60,
+      "ms": 0.08254200000010314,
+      "adds": 7272,
+      "progLen": 144
+    },
+    {
+      "pattern": "^(a?){25}a{25}$",
+      "n": 24,
+      "inputLength": 24,
+      "ms": 0.023375000000669388,
+      "adds": 2024,
+      "progLen": 155
+    },
+    {
+      "pattern": "((a)*)*b",
+      "n": 500,
+      "inputLength": 500,
+      "ms": 0.09295800000109011,
+      "adds": 9511,
+      "progLen": 24
+    }
+  ],
+  "summary": {
+    "catalogueWorstMs": 0.29491699999925913,
+    "nativeKilledCases": 3,
+    "nativeCutoffMs": 2000,
+    "maxOursMs": 12.85791700000027,
+    "elapsedMs": 10362.417042000001
+  }
+}
