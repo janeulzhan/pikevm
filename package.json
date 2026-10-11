@@ -1,0 +1,26 @@
+{
+  "name": "pikevm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Linear-time regex engine: Thompson NFA plus Pike VM, fuzz-verified against V8",
+  "license": "MIT",
+  "author": "Ulzhan Khamidolla",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-reporter=spec test/*.test.ts",
+    "fuzz": "node tools/fuzz.ts",
+    "bench": "node bench/redos.ts",
+    "bench:ci": "node bench/ci.ts",
+    "benchlock": "node tools/benchlock.ts",
+    "benchlock:check": "node tools/benchlock.ts --check",
+    "build:demo": "node scripts/build-demo.ts"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}

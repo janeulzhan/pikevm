@@ -1,0 +1,5 @@
+node_modules/
+.npmcache/
+.DS_Store
+*.log
+docs/.serve/
