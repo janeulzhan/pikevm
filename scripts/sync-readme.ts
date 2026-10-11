@@ -13,6 +13,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 const README = join(ROOT, "README.md");
 const RESULTS = join(ROOT, "bench", "results.json");
+const SWEEP = join(ROOT, "bench", "sweep-1m.json");
 
 interface NativeCell {
   status: "measured" | "killed" | "extrapolated" | "skipped";
@@ -43,6 +44,26 @@ interface Results {
     native: NativeCell;
     slowdown: number | null;
   }[];
+  catalogue: { pattern: string; inputLength: number; ms: number; adds: number }[];
+  summary: { catalogueWorstMs: number; nativeKilledCases: number };
+}
+
+interface Sweep {
+  seed: number;
+  iterations: number;
+  deadlineMs: number;
+  acceptance: number;
+  acceptanceAgreed: number;
+  wholeMatchAgreed: number;
+  spanCompared: number;
+  spanAgreed: number;
+  spanSubsetCompared: number;
+  spanSubsetAgreed: number;
+  matched: number;
+  patternsWithGroups: number;
+  oracleSkipped: number;
+  divergences: unknown[];
+  elapsedMs: number;
 }
 
 function ms(value: number): string {
@@ -120,6 +141,41 @@ function ordinaryTable(results: Results): string {
   return lines.join("\n");
 }
 
+function catalogueTable(results: Results): string {
+  const lines = [
+    "| pattern | input length | pikevm | threads admitted |",
+    "| --- | ---: | ---: | ---: |",
+  ];
+  for (const c of results.catalogue) {
+    lines.push(
+      `| \`${c.pattern.replace(/\|/g, "\\|")}\` | ${c.inputLength.toLocaleString()} | ` +
+        `${ms(c.ms)} | ${c.adds.toLocaleString()} |`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function sweepBlock(sweep: Sweep): string {
+  const n = (v: number) => v.toLocaleString();
+  const pct = (a: number, b: number) => (b === 0 ? "n/a" : `${((100 * a) / b).toFixed(4)}%`);
+  return [
+    "| comparison | pairs compared | pairs that agreed | |",
+    "| --- | ---: | ---: | ---: |",
+    `| acceptance, \`test()\` against \`RegExp.prototype.test\` | ${n(sweep.acceptance)} | ${n(sweep.acceptanceAgreed)} | ${pct(sweep.acceptanceAgreed, sweep.acceptance)} |`,
+    `| whole match span | ${n(sweep.acceptanceAgreed)} | ${n(sweep.wholeMatchAgreed)} | ${pct(sweep.wholeMatchAgreed, sweep.acceptanceAgreed)} |`,
+    `| every capture group span | ${n(sweep.spanCompared)} | ${n(sweep.spanAgreed)} | ${pct(sweep.spanAgreed, sweep.spanCompared)} |`,
+    `| the same, restricted to the conservative subset | ${n(sweep.spanSubsetCompared)} | ${n(sweep.spanSubsetAgreed)} | ${pct(sweep.spanSubsetAgreed, sweep.spanSubsetCompared)} |`,
+    "",
+    `Of the ${n(sweep.iterations)} pairs generated, ${n(sweep.matched)} actually matched, and ` +
+      `${n(sweep.patternsWithGroups)} distinct patterns carried capture groups. ` +
+      `${n(sweep.oracleSkipped)} pairs are excluded from every count above, because the platform ` +
+      `engine does not return on them inside the ${sweep.deadlineMs} ms deadline; they are listed in ` +
+      "[`test/oracle-timeouts.json`](test/oracle-timeouts.json) and discussed below. " +
+      `The sweep took ${(sweep.elapsedMs / 1000).toFixed(0)} seconds and found ` +
+      `${sweep.divergences.length} disagreement${sweep.divergences.length === 1 ? "" : "s"}.`,
+  ].join("\n");
+}
+
 function provenance(results: Results): string {
   const gib = results.hardware.memoryBytes
     ? `, ${Math.round(results.hardware.memoryBytes / 1024 ** 3)} GiB`
@@ -144,8 +200,11 @@ function replaceBlock(text: string, name: string, body: string): string {
 
 const results = JSON.parse(readFileSync(RESULTS, "utf8")) as Results;
 let text = readFileSync(README, "utf8");
+const sweep = JSON.parse(readFileSync(SWEEP, "utf8")) as Sweep;
 text = replaceBlock(text, "redos", redosTable(results));
+text = replaceBlock(text, "catalogue", catalogueTable(results));
 text = replaceBlock(text, "ordinary", ordinaryTable(results));
+text = replaceBlock(text, "sweep", sweepBlock(sweep));
 text = replaceBlock(text, "provenance", provenance(results));
 writeFileSync(README, text);
-console.log("sync-readme: regenerated the redos, ordinary and provenance blocks from bench/results.json");
+console.log("sync-readme: regenerated the redos, catalogue, ordinary, sweep and provenance blocks");
