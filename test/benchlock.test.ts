@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  KNOWN_FLAGS,
   MalformedMarkerError,
+  UnknownFlagError,
   UnknownMetricError,
+  parseArgs,
   check,
   findMarkers,
   flatten,
@@ -117,6 +120,49 @@ describe("malformed markers are rejected", () => {
       () => rewrite("<!--bench:fuzz.madeUp-->1<!--/bench-->", METRICS),
       UnknownMetricError,
     );
+  });
+});
+
+describe("command line parsing", () => {
+  it("accepts no flags, meaning the rewrite mode", () => {
+    assert.deepEqual(parseArgs([]), { check: false, json: false });
+  });
+
+  it("accepts the two real flags, together or apart", () => {
+    assert.deepEqual(parseArgs(["--check"]), { check: true, json: false });
+    assert.deepEqual(parseArgs(["--json"]), { check: false, json: true });
+    assert.deepEqual(parseArgs(["--check", "--json"]), { check: true, json: true });
+  });
+
+  it("refuses an unknown flag rather than falling through to the write path", () => {
+    // The whole point: the no-flag mode rewrites README.md, so a mistyped flag
+    // used to silently edit the artefact this tool exists to guard.
+    for (const bad of ["--list", "--heck", "-c", "check", "--CHECK", "--json=1"]) {
+      assert.throws(
+        () => parseArgs([bad]),
+        (err: unknown) => {
+          assert.ok(err instanceof UnknownFlagError, `${bad} should raise UnknownFlagError`);
+          assert.match(err.message, /unknown flag/);
+          return true;
+        },
+        `parseArgs([${JSON.stringify(bad)}]) should have thrown`,
+      );
+    }
+  });
+
+  it("refuses an unknown flag even when a real one is also present", () => {
+    assert.throws(() => parseArgs(["--check", "--oops"]), UnknownFlagError);
+    assert.throws(() => parseArgs(["--oops", "--check"]), UnknownFlagError);
+  });
+
+  it("names the accepted flags in the error", () => {
+    try {
+      parseArgs(["--nope"]);
+      assert.fail("should have thrown");
+    } catch (err) {
+      assert.ok(err instanceof UnknownFlagError);
+      for (const flag of KNOWN_FLAGS) assert.match(err.message, new RegExp(flag));
+    }
   });
 });
 
