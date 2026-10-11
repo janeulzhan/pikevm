@@ -11,9 +11,29 @@ The interesting part is not that it works. It is that the thing it does differen
 A backtracking engine, which is what `RegExp` is in every mainstream runtime, explores an exponential number of ways to split the input between two nested quantifiers before it can conclude that nothing matches. These four patterns are the standard demonstration. The native engine is run in a child process and killed at the cutoff, because a catastrophic `RegExp` call cannot be interrupted any other way.
 
 <!-- table:redos -->
+| pattern | input length | pikevm | native `RegExp` | threads pikevm admitted |
+| --- | ---: | ---: | ---: | ---: |
+| `^(a\|aa)+$` | 33 | 0.0041 ms | 185.15 ms | 393 |
+|  | 37 | 0.0051 ms | 1.2 s | 441 |
+|  | 41 | 0.0050 ms | **> 2000 ms**, killed | 489 |
+|  | 100,001 | 12.86 ms | **> 2000 ms**, extrapolated to ~10^20435 years | 1,200,009 |
+| `(a+)+$` | 21 | 0.0019 ms | 40.09 ms | 168 |
+|  | 25 | 0.0024 ms | 665.01 ms | 200 |
+|  | 29 | 0.0028 ms | **> 2000 ms**, killed | 232 |
+|  | 100,001 | 8.62 ms | **> 2000 ms**, extrapolated to ~10^29979 years | 800,008 |
+| `(x+x+)+y` | 20 | 0.0023 ms | 18.26 ms | 200 |
+|  | 24 | 0.0035 ms | 288.22 ms | 240 |
+|  | 28 | 0.0034 ms | **> 2000 ms**, killed | 280 |
+|  | 100,000 | 11.67 ms | **> 2000 ms**, extrapolated to ~10^29992 years | 1,000,000 |
+| `^(a?){n}a{n}$` | 27 | 0.0287 ms | 0.0177 ms | 2,519 |
+|  | 29 | 0.0326 ms | 0.0194 ms | 2,879 |
 <!-- /table:redos -->
 
 Same question, same answer, different asymptotics. The right-hand column is the reason: it counts the threads the VM admitted, and it grows linearly with the input while the native engine's running time does not.
+
+Three of those four. The fourth, `^(a?){n}a{n}$`, is in every ReDoS cheat sheet and V8 is simply not vulnerable to it: it handles counted quantifiers by a different route and answers in microseconds, faster than this engine does. It is in the table because dropping it would have made the other three look like the whole story.
+
+The extrapolated cells are labelled and are not measurements. They continue the growth factor fitted from the measured points, which is why they come out as powers of ten rather than as a duration; the honest reading is "this does not finish".
 
 These are wall-clock numbers measured on the hardware named at the bottom of this file. CI does not check them, and cannot: a shared runner has no business making timing claims. What CI checks instead is the thread count, which is identical on every machine.
 
@@ -34,7 +54,7 @@ Compiled program sizes, which the bound depends on, are published and gated:
 | `\d+` | <!--bench:vm.programs.digits-->5<!--/bench--> |
 | `(\d{4})-(\d{2})-(\d{2})` | <!--bench:vm.programs.date-->19<!--/bench--> |
 | `^(a\|aa)+$` | <!--bench:vm.programs.alt-nested-->14<!--/bench--> |
-| `(a*)*b` | <!--bench:vm.programs.empty-star-->14<!--/bench--> |
+| `(a*)*b` | <!--bench:vm.programs.empty-star-->18<!--/bench--> |
 
 ## Live demo
 
@@ -94,9 +114,17 @@ Two ECMAScript rules are backtracking artefacts that a textbook Pike VM does not
 
 Self-testing an engine against your own expectations tests your expectations. So the engine is tested against the one already in the runtime: a backtracking implementation with completely different internals that every reader already trusts. A seeded generator walks the supported grammar, a second one generates inputs over a small alphabet so that matches are frequent, and both engines are asked the same question. The generator is `mulberry32` with a fixed seed, so any pair is reproducible from two numbers.
 
-Locally, one million pairs:
+Locally, one million generated pairs, with every capture span compared and no restriction on which patterns take part:
 
 <!-- table:sweep -->
+| comparison | pairs compared | pairs that agreed | |
+| --- | ---: | ---: | ---: |
+| acceptance, `test()` against `RegExp.prototype.test` | 999,940 | 999,940 | 100.0000% |
+| whole match span | 999,940 | 999,940 | 100.0000% |
+| every capture group span | 999,940 | 999,940 | 100.0000% |
+| the same, restricted to the conservative subset | 611,004 | 611,004 | 100.0000% |
+
+Of the 1,000,000 pairs generated, 631,971 actually matched, and 512,867 distinct patterns carried capture groups. 60 pairs are excluded from every count above, because the platform engine does not return on them inside the 2000 ms deadline; they are listed in [`test/oracle-timeouts.json`](test/oracle-timeouts.json) and discussed below. The sweep took 110 seconds and found 0 disagreements.
 <!-- /table:sweep -->
 
 CI runs the same harness at <!--bench:fuzz.iterations-->25,000<!--/bench--> pairs, which takes about four seconds, and asserts that the number of disagreements is <!--bench:fuzz.divergenceCount-->0<!--/bench-->. In that CI-sized sweep, <!--bench:fuzz.acceptanceAgreed-->24,999<!--/bench--> of <!--bench:fuzz.acceptance-->24,999<!--/bench--> acceptance comparisons agree and <!--bench:fuzz.spanAgreed-->24,999<!--/bench--> of <!--bench:fuzz.spanCompared-->24,999<!--/bench--> capture span comparisons agree, with <!--bench:fuzz.matched-->15,966<!--/bench--> pairs actually matching so the sweep is not passing vacuously.
@@ -109,7 +137,7 @@ The span comparison began life restricted to patterns with no capture group unde
 
 ### The oracle does not always answer
 
-A fuzz that explores the grammar freely wanders into catastrophic territory, and the oracle is a backtracking engine. Roughly one generated pair in twenty thousand is one the platform engine does not return on at all. That is not a nuisance to be filtered away: it is the same result as the table at the top of this file, found by a generator rather than picked from a list.
+A fuzz that explores the grammar freely wanders into catastrophic territory, and the oracle is a backtracking engine. Roughly one generated pair in seventeen thousand is one the platform engine does not return on at all: 60 of the million. That is not a nuisance to be filtered away: it is the same result as the table at the top of this file, found by a generator rather than picked from a list.
 
 So the sweep runs in a worker thread with the supervisor watching a heartbeat, and a worker whose heartbeat stops for longer than the deadline is terminated and the pair it was on is recorded. Every one of them is in [`test/oracle-timeouts.json`](test/oracle-timeouts.json) with its seed and index, which keeps the agreement counts reproducible, and [`test/fuzz.test.ts`](test/fuzz.test.ts) asserts that this engine answers all of them in under five milliseconds. The first one the generator finds, at iteration 24,320, is:
 
@@ -117,13 +145,27 @@ So the sweep runs in a worker thread with the supervisor watching a heartbeat, a
 /(((1{0,0})-{1,3} ?|$0_|([\w-]{0,2})*){3}){1,}(.^|0+|0b+_*)^/   on   "b00a1xc_0-c_-1bca__"
 ```
 
-Nineteen characters. pikevm answers `false` in about a quarter of a millisecond; the platform engine does not answer.
+Nineteen characters, and a 346 instruction program. pikevm admits 3,576 threads and answers `false` in 0.05 ms; the platform engine does not answer.
 
 ## The twelve-pattern catalogue
 
 The usual catastrophic-backtracking catalogue, timed on this engine. Wall-clock, measured locally, not CI-gated. [`test/redos.test.ts`](test/redos.test.ts) asserts the thread-count bound for each of these instead, which is the part that can be checked anywhere.
 
 <!-- table:catalogue -->
+| pattern | input length | pikevm | threads admitted |
+| --- | ---: | ---: | ---: |
+| `^(a\|aa)+$` | 41 | 0.0056 ms | 489 |
+| `(a+)+$` | 41 | 0.0037 ms | 328 |
+| `(a+)+b` | 40 | 0.0038 ms | 324 |
+| `(x+x+)+y` | 40 | 0.0050 ms | 400 |
+| `(a*)*b` | 2,000 | 0.2949 ms | 28,009 |
+| `(a\|a?)+$` | 41 | 0.0098 ms | 918 |
+| `([a-zA-Z]+)*$` | 41 | 0.0042 ms | 374 |
+| `(a\|b\|ab)+c` | 48 | 0.0070 ms | 608 |
+| `^(\w+\s?)*$` | 41 | 0.0052 ms | 489 |
+| `(.*a){20}b` | 60 | 0.0825 ms | 7,272 |
+| `^(a?){25}a{25}$` | 24 | 0.0234 ms | 2,024 |
+| `((a)*)*b` | 500 | 0.0930 ms | 9,511 |
 <!-- /table:catalogue -->
 
 ## What CI checks, and what it cannot
@@ -139,6 +181,13 @@ No wall-clock figure is gated. Every timing in this file comes from `bench/resul
 - **Slower than the native engine on ordinary patterns,** and it should be. A general NFA simulation does bookkeeping per character that a backtracking engine tuned over two decades skips entirely. Measured:
 
 <!-- table:ordinary -->
+| pattern | input length | pikevm | native `RegExp` | pikevm is slower by |
+| --- | ---: | ---: | ---: | ---: |
+| `needle` | 180,006 | 4.92 ms | 0.0374 ms | 131.7× |
+| `(\d{4})-(\d{2})-(\d{2})` | 20,010 | 0.7892 ms | 0.0397 ms | 19.9× |
+| `^[a-z]+$` | 20,000 | 1.18 ms | 0.0310 ms | 38.0× |
+| `[\w.]+@[\w]+\.[a-z]{2,4}` | 20,016 | 1.19 ms | 0.0409 ms | 29.0× |
+| `a.*b.*c` | 5,003 | 0.1370 ms | 0.0217 ms | 6.3× |
 <!-- /table:ordinary -->
 
   The trade is the whole point: a constant factor on the patterns that were never a problem, in exchange for a bound on the ones that were.
@@ -150,6 +199,7 @@ No wall-clock figure is gated. Every timing in this file comes from `bench/resul
 ## Provenance
 
 <!-- table:provenance -->
+Measured on Apple M4, 16 GiB, Node v24.19.0, 2026-10-11. The native engine is run in a child process and killed at 2000 ms, because a catastrophic `RegExp` call cannot be interrupted any other way.
 <!-- /table:provenance -->
 
 The committed `bench/results.json` and `bench/sweep-1m.json` are the actual output of `npm run bench` and `npm run fuzz`; every table above is rendered from them.
