@@ -1,0 +1,151 @@
+// Renders the two wall-clock tables in the README from bench/results.json.
+//
+// These tables are timings, so benchlock does not gate them and CI never
+// judges them. They are regenerated from the committed measurement rather than
+// typed by hand, which is a weaker guarantee than benchlock gives the
+// deterministic figures but still rules out a number that was never measured.
+
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, "..");
+const README = join(ROOT, "README.md");
+const RESULTS = join(ROOT, "bench", "results.json");
+
+interface NativeCell {
+  status: "measured" | "killed" | "extrapolated" | "skipped";
+  ms?: number;
+  cutoffMs?: number;
+  estimateMs?: number;
+}
+
+interface Row {
+  caseId: string;
+  pattern: string;
+  n: number;
+  ours: { ms: number; adds: number; progLen: number; inputLength: number };
+  native: NativeCell;
+}
+
+interface Results {
+  generatedAt: string;
+  node: string;
+  hardware: { cpu: string; memoryBytes: number | null };
+  cutoffMs: number;
+  redos: Row[];
+  ordinary: {
+    caseId: string;
+    pattern: string;
+    inputLength: number;
+    ours: { ms: number };
+    native: NativeCell;
+    slowdown: number | null;
+  }[];
+}
+
+function ms(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(1)} s`;
+  if (value >= 1) return `${value.toFixed(2)} ms`;
+  if (value >= 0.001) return `${value.toFixed(4)} ms`;
+  return `${(value * 1000).toFixed(1)} \u00b5s`;
+}
+
+function nativeCell(cell: NativeCell, cutoffMs: number): string {
+  switch (cell.status) {
+    case "measured":
+      return ms(cell.ms ?? 0);
+    case "killed":
+      return `**> ${cutoffMs} ms**, killed`;
+    case "extrapolated":
+      return `**> ${cutoffMs} ms**, extrapolated to ~${ms(cell.estimateMs ?? 0)}`;
+    default:
+      return "not run";
+  }
+}
+
+/**
+ * Four sizes per pattern: the two largest the native engine finished, the first
+ * one it did not, and the largest overall. That is the frontier, which is the
+ * only part of the sweep worth putting above the fold.
+ */
+function pickSizes(rows: Row[]): Row[] {
+  const measured = rows.filter((r) => r.native.status === "measured");
+  const firstKilled = rows.find((r) => r.native.status === "killed");
+  const chosen = new Set<number>();
+  for (const r of measured.slice(-2)) chosen.add(r.n);
+  if (firstKilled) chosen.add(firstKilled.n);
+  chosen.add(rows[rows.length - 1].n);
+  return rows.filter((r) => chosen.has(r.n));
+}
+
+function redosTable(results: Results): string {
+  const byCase = new Map<string, Row[]>();
+  for (const r of results.redos) {
+    const list = byCase.get(r.caseId) ?? [];
+    list.push(r);
+    byCase.set(r.caseId, list);
+  }
+  const lines = [
+    "| pattern | input length | pikevm | native `RegExp` | threads pikevm admitted |",
+    "| --- | ---: | ---: | ---: | ---: |",
+  ];
+  for (const rows of byCase.values()) {
+    const picked = pickSizes(rows);
+    picked.forEach((r, i) => {
+      const label = i === 0 ? `\`${r.pattern.replace(/\|/g, "\\|")}\`` : "";
+      lines.push(
+        `| ${label} | ${r.ours.inputLength.toLocaleString()} | ${ms(r.ours.ms)} | ` +
+          `${nativeCell(r.native, results.cutoffMs)} | ${r.ours.adds.toLocaleString()} |`,
+      );
+    });
+  }
+  return lines.join("\n");
+}
+
+function ordinaryTable(results: Results): string {
+  const lines = [
+    "| pattern | input length | pikevm | native `RegExp` | pikevm is slower by |",
+    "| --- | ---: | ---: | ---: | ---: |",
+  ];
+  for (const r of results.ordinary) {
+    const factor =
+      r.slowdown === null ? "not measured" : `${r.slowdown.toFixed(1)}\u00d7`;
+    lines.push(
+      `| \`${r.pattern.replace(/\|/g, "\\|")}\` | ${r.inputLength.toLocaleString()} | ` +
+        `${ms(r.ours.ms)} | ${nativeCell(r.native, results.cutoffMs)} | ${factor} |`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function provenance(results: Results): string {
+  const gib = results.hardware.memoryBytes
+    ? `, ${Math.round(results.hardware.memoryBytes / 1024 ** 3)} GiB`
+    : "";
+  return (
+    `Measured on ${results.hardware.cpu}${gib}, Node ${results.node}, ` +
+    `${results.generatedAt.slice(0, 10)}. The native engine is run in a child process and killed at ` +
+    `${results.cutoffMs} ms, because a catastrophic \`RegExp\` call cannot be interrupted any other way.`
+  );
+}
+
+function replaceBlock(text: string, name: string, body: string): string {
+  const open = `<!-- table:${name} -->`;
+  const close = `<!-- /table:${name} -->`;
+  const start = text.indexOf(open);
+  const end = text.indexOf(close);
+  if (start < 0 || end < 0 || end < start) {
+    throw new Error(`README is missing the ${open} ... ${close} block`);
+  }
+  return `${text.slice(0, start + open.length)}\n${body}\n${text.slice(end)}`;
+}
+
+const results = JSON.parse(readFileSync(RESULTS, "utf8")) as Results;
+let text = readFileSync(README, "utf8");
+text = replaceBlock(text, "redos", redosTable(results));
+text = replaceBlock(text, "ordinary", ordinaryTable(results));
+text = replaceBlock(text, "provenance", provenance(results));
+writeFileSync(README, text);
+console.log("sync-readme: regenerated the redos, ordinary and provenance blocks from bench/results.json");

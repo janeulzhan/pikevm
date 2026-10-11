@@ -87,3 +87,23 @@ export const ORDINARY_CASES: readonly { id: string; pattern: string; input: Inpu
   { id: "class-scan", pattern: "[\\w.]+@[\\w]+\\.[a-z]{2,4}", input: { fill: "z", n: 20000, suffix: "jane@example.com" } },
   { id: "dot-star", pattern: "a.*b.*c", input: { fill: "d", n: 5000, suffix: "abc" } },
 ];
+
+/**
+ * The twelve patterns in the catastrophic-backtracking catalogue, with the
+ * input size at which each one is adversarial. Timed by bench/redos.ts so the
+ * README can quote a measured figure rather than a test assertion.
+ */
+export const CATALOGUE: readonly { pattern: string; fill: string; suffix: string; n: number }[] = [
+  { pattern: "^(a|aa)+$", fill: "a", suffix: "b", n: 40 },
+  { pattern: "(a+)+$", fill: "a", suffix: "!", n: 40 },
+  { pattern: "(a+)+b", fill: "a", suffix: "", n: 40 },
+  { pattern: "(x+x+)+y", fill: "x", suffix: "", n: 40 },
+  { pattern: "(a*)*b", fill: "a", suffix: "", n: 2000 },
+  { pattern: "(a|a?)+$", fill: "a", suffix: "b", n: 40 },
+  { pattern: "([a-zA-Z]+)*$", fill: "a", suffix: "1", n: 40 },
+  { pattern: "(a|b|ab)+c", fill: "ab", suffix: "", n: 24 },
+  { pattern: "^(\\w+\\s?)*$", fill: "a", suffix: "!", n: 40 },
+  { pattern: "(.*a){20}b", fill: "a", suffix: "", n: 60 },
+  { pattern: "^(a?){25}a{25}$", fill: "a", suffix: "", n: 24 },
+  { pattern: "((a)*)*b", fill: "a", suffix: "", n: 500 },
+];

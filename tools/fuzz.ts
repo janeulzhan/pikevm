@@ -149,6 +149,11 @@ export async function sweep(options: SweepOptions): Promise<SweepReport> {
       started,
     });
     if (stalledAt === null) break;
+    // Defensive: never let the cursor go backwards, or a misread heartbeat
+    // would restart the same range forever.
+    if (stalledAt < cursor) {
+      throw new Error(`supervisor read a stall at ${stalledAt}, behind the cursor at ${cursor}`);
+    }
     const { pattern, input } = pairAt(seed, stalledAt);
     const ours = measureOurs(pattern, input);
     newStalls.push({
@@ -214,7 +219,7 @@ function runWorker(run: WorkerRun): Promise<number | null> {
       },
     });
     let settled = false;
-    let lastBeat = run.counters[SLOT.heartbeat];
+    let lastTick = run.counters[SLOT.ticks];
     let lastMove = performance.now();
     let nextProgress = run.progressEvery > 0 ? run.from + run.progressEvery : Infinity;
 
@@ -227,14 +232,15 @@ function runWorker(run: WorkerRun): Promise<number | null> {
     };
 
     const timer = setInterval(() => {
-      const beat = run.counters[SLOT.heartbeat];
-      if (beat !== lastBeat) {
-        lastBeat = beat;
+      const tick = run.counters[SLOT.ticks];
+      if (tick !== lastTick) {
+        lastTick = tick;
         lastMove = performance.now();
       } else if (performance.now() - lastMove > run.deadlineMs) {
-        finish(beat);
+        finish(run.counters[SLOT.heartbeat]);
         return;
       }
+      const beat = run.counters[SLOT.heartbeat];
       if (beat >= nextProgress && run.onProgress) {
         const secs = (performance.now() - run.started) / 1000;
         run.onProgress(

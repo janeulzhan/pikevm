@@ -24,7 +24,6 @@ export function compile(pattern: string, limit = MAX_PROGRAM_SIZE): Program {
   return {
     insts: c.insts,
     slotCount: 2 * (groupCount + 1),
-    regCount: c.regCount,
     groupCount,
     source: pattern,
   };
@@ -34,7 +33,6 @@ class Compiler {
   readonly insts: Inst[] = [];
   readonly pattern: string;
   readonly limit: number;
-  regCount = 0;
 
   constructor(pattern: string, limit: number) {
     this.pattern = pattern;
@@ -51,22 +49,6 @@ class Compiler {
 
   get here(): number {
     return this.insts.length;
-  }
-
-  /** One progress register per quantifier that can guard an empty iteration. */
-  newReg(): number {
-    return this.regCount++;
-  }
-
-  /**
-   * Emits the per-iteration capture reset for a quantifier body, if it holds
-   * any groups. Returns true when an instruction was emitted.
-   */
-  clearBodyGroups(body: Node): boolean {
-    const range = groupRange(body);
-    if (range === null) return false;
-    this.emit({ op: "clear", from: 2 * range[0], to: 2 * range[1] + 1 });
-    return true;
   }
 
   node(n: Node): void {
@@ -103,9 +85,9 @@ class Compiler {
   }
 
   // e1 | e2 | e3
-  //     split L1, L2
+  //      split L1, L2
   //  L1: e1
-  //     jump End
+  //      jump End
   //  L2: split L3, L4   ... and so on
   alt(options: readonly Node[]): void {
     const jumpsToEnd: number[] = [];
@@ -135,71 +117,124 @@ class Compiler {
     // copies. Every emit() call is checked against the size limit, so an
     // expansion that would explode is rejected instead of consuming memory.
     //
-    // The first `min` iterations are allowed to match the empty string, which
-    // is why they carry no progress guard; every iteration after that is one
-    // the quantifier could legally skip, so it must consume input. That split
-    // is the ECMAScript RepeatMatcher rule, and reproducing it is what keeps
-    // the whole-match span in step with the platform engine on patterns such
-    // as /(a?|.+){1,2}/.
-    for (let i = 0; i < min; i++) {
-      this.clearBodyGroups(body);
-      this.node(body);
-    }
+    // The first `min` iterations are allowed to match the empty string, so
+    // they are emitted unguarded; every iteration after that is one the
+    // quantifier could legally skip, so it must consume input. That split is
+    // the ECMAScript RepeatMatcher rule, and reproducing it is what keeps the
+    // whole-match span in step with the platform engine on patterns such as
+    // /(a?|.+){1,2}/.
+    for (let i = 0; i < min; i++) this.iteration(body, false);
     if (max === Infinity) {
+      // a{2,} is a a a*
       this.star(body);
       return;
     }
     const optionalCopies = max - min;
     const guarded = matchesEmpty(body);
-    const reg = guarded ? this.newReg() : -1;
     const splits: number[] = [];
     for (let i = 0; i < optionalCopies; i++) {
       const split = this.emit({ op: "split", x: 0, y: 0 });
       splits.push(split);
       this.patchSplit(split, this.here, 0);
-      if (guarded) this.emit({ op: "mark", reg });
-      this.clearBodyGroups(body);
-      this.node(body);
-      if (guarded) this.emit({ op: "progress", reg });
+      this.iteration(body, guarded);
     }
     for (const split of splits) this.patchSplit(split, undefined, this.here);
   }
 
-  // A body that cannot match the empty string can never trigger the
-  // ECMAScript empty-iteration rule, so the guard instructions are emitted
-  // only where they can change the answer. That keeps /a+/ and /\d*/ at the
-  // textbook three or four instructions and pays the extra cost just for the
-  // patterns that need it.
+  /**
+   * Emits the per-iteration capture reset for a quantifier body, if it holds
+   * any groups. ECMAScript clears the slots of every group inside a quantifier
+   * at the start of each iteration, which is why /(?:(a)|b)+/ on "ab" leaves
+   * group one unset rather than holding the "a" from the first iteration.
+   */
+  clearBodyGroups(body: Node): void {
+    const range = groupRange(body);
+    if (range === null) return;
+    this.emit({ op: "clear", from: 2 * range[0], to: 2 * range[1] + 1 });
+  }
 
-  //  unguarded             guarded (body can match empty)
-  //  L1: split L2, L3      L1: split L2, L5
-  //  L2: body              L2: mark r
-  //      jump L1           L3: body
-  //  L3:                       progress r
-  //                            jump L1
-  //                        L5:
-  star(body: Node): void {
-    const guarded = matchesEmpty(body);
-    const reg = guarded ? this.newReg() : -1;
-    const top = this.emit({ op: "split", x: 0, y: 0 });
-    this.patchSplit(top, this.here, 0);
-    if (guarded) this.emit({ op: "mark", reg });
+  /**
+   * Emits one iteration of a quantifier that is allowed to be skipped, for a
+   * body that can match the empty string.
+   *
+   * ECMAScript requires such an iteration to consume input: /(a?)* / on "" sets
+   * no capture, because the single empty iteration is rejected and the loop
+   * runs zero times. Expressing that with a register, "remember where this
+   * iteration started and die if it ends there", is the obvious move and it is
+   * wrong in a thread-deduplicating VM: two threads can reach the same program
+   * counter at the same position holding different register values, and the
+   * sparse set keeps only one of them. That loses real matches, at a rate of
+   * about six in a million generated pairs, which is exactly the sort of thing
+   * a differential fuzz finds and inspection does not.
+   *
+   * So the state goes in the program counter instead, as a product with a one
+   * bit "has this iteration consumed anything yet" flag. The body is emitted
+   * twice:
+   *
+   *     clear               capture slots of groups inside the body
+   *     <copy N>            nothing consumed yet; every char and class in here
+   *                         transfers into the matching place in copy C
+   *     fail                fell out of copy N, so the iteration was empty
+   *     <copy C>            something has been consumed; falls out normally
+   *
+   * Both copies have the same shape, so instruction i of copy N corresponds to
+   * instruction i of copy C and the transfer is a fixed offset. Every thread
+   * reaching a given program counter now has the same future, dedup is sound
+   * again, and the register disappears.
+   */
+  guardedBody(body: Node): void {
+    this.clearBodyGroups(body);
+    const nothingConsumed = this.here;
+    this.node(body);
+    const length = this.here - nothingConsumed;
+    this.emit({ op: "fail" });
+    const consumed = this.here;
+    this.node(body);
+    if (this.here - consumed !== length) {
+      throw new Error("the two copies of a guarded quantifier body differ in length");
+    }
+    // Redirect every consuming instruction in copy N to its counterpart in
+    // copy C. A nested guarded quantifier inside the body has already set its
+    // own `next`, pointing somewhere else inside copy N, so the two mappings
+    // compose: take wherever the thread would have gone, and shift it into
+    // copy C.
+    const delta = consumed - nothingConsumed;
+    for (let i = 0; i < length; i++) {
+      const inst = this.insts[nothingConsumed + i];
+      if (inst.op === "char" || inst.op === "class") {
+        const target = inst.next === undefined ? nothingConsumed + i + 1 : inst.next;
+        inst.next = target + delta;
+      }
+    }
+  }
+
+  /** One iteration of a quantifier, guarded only where the body needs it. */
+  iteration(body: Node, guarded: boolean): void {
+    if (guarded) {
+      this.guardedBody(body);
+      return;
+    }
     this.clearBodyGroups(body);
     this.node(body);
-    if (guarded) this.emit({ op: "progress", reg });
+  }
+
+  //  L1: split L2, L3
+  //  L2: one iteration
+  //      jump L1
+  //  L3:
+  star(body: Node): void {
+    const guarded = matchesEmpty(body);
+    const top = this.emit({ op: "split", x: 0, y: 0 });
+    this.patchSplit(top, this.here, 0);
+    this.iteration(body, guarded);
     this.emit({ op: "jump", x: top });
     this.patchSplit(top, undefined, this.here);
   }
 
-  // When the body cannot match empty, one copy and a backward split is enough.
-  //
-  // When it can, the body is emitted twice: once unguarded for the first
-  // iteration, which ECMAScript allows to match empty, and once inside a
-  // guarded star for the rest. A single shared copy would not do, because the
-  // sparse set admits each program counter only once per input position, so
-  // "first iteration empty, second iteration consumes" would be unreachable
-  // for /(a?|x)+/ on "xx". Two copies give the two iterations distinct program
-  // counters and the platform engine's answer falls out.
+  // A body that cannot match empty needs no guard at all, so /a+/ stays at the
+  // textbook three instructions. A body that can is emitted once unguarded,
+  // because ECMAScript lets the first iteration of a '+' match empty, and then
+  // again inside a guarded star for every iteration after that.
   plus(body: Node): void {
     if (!matchesEmpty(body)) {
       const top = this.here;
@@ -209,25 +244,18 @@ class Compiler {
       this.patchSplit(split, undefined, this.here);
       return;
     }
-    this.clearBodyGroups(body);
-    this.node(body);
+    this.iteration(body, false);
     this.star(body);
   }
 
-  //      split L1, L2          split L1, L2
-  //  L1: body              L1: mark r
-  //  L2:                       body
-  //                            progress r
-  //                        L2:
+  //      split L1, L2
+  //  L1: one iteration
+  //  L2:
   optional(body: Node): void {
     const guarded = matchesEmpty(body);
-    const reg = guarded ? this.newReg() : -1;
     const split = this.emit({ op: "split", x: 0, y: 0 });
     this.patchSplit(split, this.here, 0);
-    if (guarded) this.emit({ op: "mark", reg });
-    this.clearBodyGroups(body);
-    this.node(body);
-    if (guarded) this.emit({ op: "progress", reg });
+    this.iteration(body, guarded);
     this.patchSplit(split, undefined, this.here);
   }
 

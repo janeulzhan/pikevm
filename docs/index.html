@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pikevm: a linear-time regex engine</title>
+<meta name="description" content="Thompson NFA plus a Pike VM with capture groups. Watch the thread set and race it against the native engine.">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fbfbfa;
+  --panel: #ffffff;
+  --ink: #16181d;
+  --muted: #5d6470;
+  --line: #e2e3e0;
+  --accent: #1f6feb;
+  --ours: #1a7f5a;
+  --theirs: #b3401f;
+  --grid: #eceeea;
+  --dot: #1a7f5a;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --panel: #1b1e24;
+    --ink: #e8eaed;
+    --muted: #9aa2ad;
+    --line: #2b2f37;
+    --accent: #6ea8ff;
+    --ours: #4fc99a;
+    --theirs: #ff8f6b;
+    --grid: #22262d;
+    --dot: #4fc99a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 40px 20px 80px; }
+header h1 { font-size: 1.9rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+header p.tagline { margin: 0 0 4px; color: var(--muted); font-size: 1.02rem; }
+header p.meta { margin: 10px 0 0; color: var(--muted); font-size: 0.85rem; }
+header a { color: var(--accent); }
+section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 22px 22px 24px;
+  margin-top: 28px;
+}
+section h2 { font-size: 1.12rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+section p.lede { margin: 0 0 18px; color: var(--muted); font-size: 0.92rem; }
+label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
+select, input[type="text"], textarea {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 0.9rem;
+}
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+button {
+  padding: 9px 20px; border: 0; border-radius: 7px; background: var(--accent); color: #fff;
+  font-size: 0.92rem; font-weight: 600; cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+.row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+.row > div { flex: 1 1 200px; min-width: 150px; }
+.row > div.shrink { flex: 0 0 auto; min-width: 0; }
+.timers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+.timer { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+.timer .who { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.timer .val { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; margin-top: 4px; line-height: 1.2; }
+.timer .note { font-size: 0.78rem; color: var(--muted); margin-top: 4px; min-height: 2.4em; }
+.timer.ours .val { color: var(--ours); }
+.timer.theirs .val { color: var(--theirs); }
+.timer.running .val { opacity: 0.55; }
+canvas { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); margin-top: 12px; }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--dot); margin-right: 6px; vertical-align: 1px; }
+.legend span.grid::before { background: var(--grid); border-radius: 2px; }
+pre {
+  font-family: var(--mono); font-size: 0.82rem; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 7px; padding: 12px 14px; margin: 14px 0 0; overflow-x: auto; max-height: 300px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin-top: 14px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+td.num { font-family: var(--mono); text-align: right; }
+.groups { margin-top: 16px; }
+.group-row { display: flex; gap: 10px; align-items: baseline; font-family: var(--mono); font-size: 0.86rem; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.group-row .gname { color: var(--muted); min-width: 68px; }
+.group-row .gspan { color: var(--muted); min-width: 76px; font-size: 0.8rem; }
+.group-row .gtext { color: var(--ours); word-break: break-all; }
+.group-row .gtext.unset { color: var(--muted); font-style: italic; }
+.err { color: var(--theirs); font-family: var(--mono); font-size: 0.85rem; margin-top: 12px; }
+.statline { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); margin-top: 12px; }
+footer { margin-top: 36px; color: var(--muted); font-size: 0.84rem; }
+footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>pikevm</h1>
+    <p class="tagline">A regular expression engine that matches in one linear pass: Thompson's NFA construction, a Pike VM with capture groups, and a sparse set that admits each program counter once per input position.</p>
+    <p class="meta">Everything on this page runs in your browser. No regular expression library is involved on the pikevm side: the parser, the compiler and the VM are all in the inlined bundle. <a href="https://github.com/janeulzhan/pikevm">Source on GitHub</a>.</p>
+  </header>
+
+  <section id="race">
+    <h2>1. The race</h2>
+    <p class="lede">Both engines are asked the same question. The native engine runs inside a worker so this page can stop it; without that, a catastrophic pattern would lock the tab up for the rest of the afternoon.</p>
+    <div class="row">
+      <div>
+        <label for="race-pattern">Pattern</label>
+        <select id="race-pattern"></select>
+      </div>
+      <div class="shrink">
+        <label for="race-n">Input length</label>
+        <input type="range" id="race-n" min="4" max="48" value="26" step="1" style="width:220px">
+      </div>
+      <div class="shrink">
+        <label>&nbsp;</label>
+        <button id="race-go">Race</button>
+      </div>
+    </div>
+    <p class="statline" id="race-subject"></p>
+    <div class="timers">
+      <div class="timer ours" id="timer-ours">
+        <div class="who">pikevm</div>
+        <div class="val">&mdash;</div>
+        <div class="note"></div>
+      </div>
+      <div class="timer theirs" id="timer-theirs">
+        <div class="who">native RegExp</div>
+        <div class="val">&mdash;</div>
+        <div class="note"></div>
+      </div>
+    </div>
+    <table id="race-history"><thead><tr><th>n</th><th>pikevm</th><th>native</th><th>threads admitted</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section id="threads">
+    <h2>2. The thread set</h2>
+    <p class="lede">One column per input position, one row per program counter. A dot means that counter was live at that position. The claim is that no column can hold more dots than the program has instructions, and this is what that looks like.</p>
+    <div class="row">
+      <div>
+        <label for="vis-pattern">Pattern</label>
+        <input type="text" id="vis-pattern" value="(a|aa)+b" spellcheck="false">
+      </div>
+      <div>
+        <label for="vis-input">Input</label>
+        <input type="text" id="vis-input" value="aaaaaaaab" spellcheck="false">
+      </div>
+      <div class="shrink">
+        <label>&nbsp;</label>
+        <button id="vis-go">Step through</button>
+      </div>
+    </div>
+    <canvas id="vis-canvas" width="1800" height="700"></canvas>
+    <div class="legend">
+      <span>live thread</span>
+      <span class="grid">position by program counter</span>
+    </div>
+    <p class="statline" id="vis-stats"></p>
+    <p class="err" id="vis-error"></p>
+  </section>
+
+  <section id="tryit">
+    <h2>3. Capture groups</h2>
+    <p class="lede">Submatch extraction under the VM, not just a boolean. Capture slots are copied on write, so a thread shares its slots with its siblings until one of them actually writes.</p>
+    <div class="row">
+      <div>
+        <label for="try-pattern">Pattern</label>
+        <input type="text" id="try-pattern" value="(\d{4})-(\d{2})-(\d{2})" spellcheck="false">
+      </div>
+      <div>
+        <label for="try-input">Subject</label>
+        <input type="text" id="try-input" value="due on 2026-10-11, confirm" spellcheck="false">
+      </div>
+    </div>
+    <div class="groups" id="try-groups"></div>
+    <p class="err" id="try-error"></p>
+    <pre id="try-program"></pre>
+  </section>
+
+  <footer id="provenance"></footer>
+</div>
+<script>window.PIKEVM_RESULTS=void 0;</script>
+<script>"use strict";(()=>{var S=class extends Error{offset;pattern;constructor(t,e,s){super(`${t} (at offset ${s} in /${e}/)`),this.name="RegexSyntaxError",this.offset=s,this.pattern=e}};function $(r,t){switch(t(r),r.kind){case"concat":for(let e of r.parts)$(e,t);break;case"alt":for(let e of r.options)$(e,t);break;case"repeat":$(r.body,t);break;case"group":case"noncap":$(r.body,t);break;default:break}}function v(r){switch(r.kind){case"empty":case"assert":return!0;case"char":case"class":return!1;case"concat":return r.parts.every(v);case"alt":return r.options.some(v);case"repeat":return r.min===0||v(r.body);case"group":case"noncap":return v(r.body)}}function B(r){let t=1/0,e=-1/0;return $(r,s=>{s.kind==="group"&&(s.index<t&&(t=s.index),s.index>e&&(e=s.index))}),e<0?null:[t,e]}function k(r,t){return{ranges:at(r),negate:t}}function at(r){if(r.length===0)return[];let t=r.slice().sort((i,l)=>i[0]-l[0]||i[1]-l[1]),e=[],[s,n]=t[0];for(let i=1;i<t.length;i++){let[l,o]=t[i];l<=n+1?o>n&&(n=o):(e.push([s,n]),s=l,n=o)}return e.push([s,n]),e}function V(r,t){let{ranges:e}=r,s=0,n=e.length-1,i=!1;for(;s<=n;){let l=s+n>>1,o=e[l];if(t<o[0])n=l-1;else if(t>o[1])s=l+1;else{i=!0;break}}return r.negate?!i:i}var C=r=>r.charCodeAt(0),X=[[C("0"),C("9")]],Z=[[C("0"),C("9")],[C("A"),C("Z")],[C("_"),C("_")],[C("a"),C("z")]],Y=[[9,13],[32,32],[160,160],[5760,5760],[8192,8202],[8232,8233],[8239,8239],[8287,8287],[12288,12288],[65279,65279]],ot=[[10,10],[13,13],[8232,8233]],j={d:k(X,!1),D:k(X,!0),w:k(Z,!1),W:k(Z,!0),s:k(Y,!1),S:k(Y,!0)},tt=k(ot,!0);function O(r){let t=r.ranges.map(([e,s])=>e===s?z(e):`${z(e)}-${z(s)}`).join("");return`[${r.negate?"^":""}${t}]`}function z(r){return r===10?"\\n":r===13?"\\r":r===9?"\\t":r<32||r>126?`\\u${r.toString(16).padStart(4,"0")}`:String.fromCharCode(r)}var _=1e5,L={n:10,r:13,t:9,f:12,v:11,0:0},et="\\^$.|?*+()[]{}/-";function D(r){let t=new G(r),e=t.parseAlt();return t.atEnd()||(t.peek()===")"&&t.fail("unmatched ')'"),t.fail(`unexpected '${t.peek()}'`)),{ast:e,groupCount:t.groupCount}}var G=class{src;pos=0;groupCount=0;constructor(t){this.src=t}atEnd(){return this.pos>=this.src.length}peek(t=0){return this.src[this.pos+t]??""}next(){return this.src[this.pos++]??""}eat(t){return this.peek()===t?(this.pos+=1,!0):!1}expect(t,e){this.eat(t)||this.fail(`expected '${t}' ${e}`)}fail(t){throw new S(t,this.src,this.pos)}parseAlt(){let t=[this.parseConcat()];for(;this.eat("|");)t.push(this.parseConcat());return t.length===1?t[0]:{kind:"alt",options:t}}parseConcat(){let t=[];for(;!this.atEnd()&&this.peek()!=="|"&&this.peek()!==")";)t.push(this.parseRep());return t.length===0?{kind:"empty"}:t.length===1?t[0]:{kind:"concat",parts:t}}parseRep(){let t=this.parseAtom(),e=this.tryQuantifier();return e?(t.kind==="assert"&&this.fail("quantifier applied to an anchor"),this.tryQuantifier()&&this.fail("nothing to repeat: double quantifier"),{kind:"repeat",body:t,min:e[0],max:e[1]}):t}tryQuantifier(){let t=this.peek();if(t==="*")return this.pos+=1,[0,1/0];if(t==="+")return this.pos+=1,[1,1/0];if(t==="?")return this.pos+=1,[0,1];if(t!=="{")return null;let e=this.pos;this.pos+=1;let s=this.readInt();s===null&&(this.pos=e,this.fail("'{' must begin a counted quantifier such as {2} or {1,3}"));let n=s;if(this.eat(",")){let i=this.readInt();n=i===null?1/0:i}return this.expect("}","to close a counted quantifier"),(s>_||n!==1/0&&n>_)&&this.fail(`repeat bound above ${_}`),n!==1/0&&n<s&&this.fail("repeat range is inverted"),[s,n]}readInt(){let t="";for(;this.peek()>="0"&&this.peek()<="9";)t+=this.next();return t.length===0?null:Number.parseInt(t,10)}parseAtom(){let t=this.peek();return t==="("?this.parseGroup():t==="["?{kind:"class",set:this.parseClass()}:t==="."?(this.pos+=1,{kind:"class",set:tt}):t==="^"?(this.pos+=1,{kind:"assert",at:"bol"}):t==="$"?(this.pos+=1,{kind:"assert",at:"eol"}):t==="\\"?this.parseEscape():((t==="*"||t==="+"||t==="?")&&this.fail(`nothing to repeat before '${t}'`),t===")"&&this.fail("unmatched ')'"),t===""&&this.fail("unexpected end of pattern"),this.pos+=1,{kind:"char",code:t.charCodeAt(0)})}parseGroup(){if(this.expect("(","to open a group"),this.peek()==="?"){let s=this.peek(1);if(s===":"){this.pos+=2;let n=this.parseAlt();return this.expect(")","to close a group"),{kind:"noncap",body:n}}if((s==="="||s==="!")&&this.fail("lookahead is not supported: it cannot be matched in one linear pass"),s==="<"){let n=this.peek(2);(n==="="||n==="!")&&this.fail("lookbehind is not supported: it cannot be matched in one linear pass"),this.fail("named groups are not supported")}this.fail(`unsupported group prefix '(?${s}'`)}let t=++this.groupCount,e=this.parseAlt();return this.expect(")","to close a group"),{kind:"group",body:e,index:t}}parseEscape(){this.expect("\\","to begin an escape");let t=this.next();t===""&&this.fail("trailing backslash"),t>="1"&&t<="9"&&this.fail("backreferences are not supported: they force a backtracking matcher"),(t==="b"||t==="B")&&this.fail(`'\\${t}' word boundaries are not supported`),t==="k"&&this.fail("named backreferences are not supported");let e=j[t];if(e)return{kind:"class",set:e};if(t in L)return{kind:"char",code:L[t]};if(t==="x")return{kind:"char",code:this.readHex(2)};if(t==="u")return{kind:"char",code:this.readHex(4)};if(et.includes(t))return{kind:"char",code:t.charCodeAt(0)};this.fail(`unsupported escape '\\${t}'`)}readHex(t){let e="";for(let s=0;s<t;s++){let n=this.peek();n>="0"&&n<="9"||n>="a"&&n<="f"||n>="A"&&n<="F"||this.fail(`expected ${t} hex digits`),e+=this.next()}return Number.parseInt(e,16)}parseClass(){this.expect("[","to open a character class");let t=this.eat("^"),e=[],s=!0;for(;!this.eat("]");){this.atEnd()&&this.fail("unterminated character class"),s=!1;let n=this.parseClassAtom(e);if(n!==null)if(this.peek()==="-"&&this.peek(1)!=="]"&&this.peek(1)!==""){this.pos+=1;let i=this.parseClassAtom(e);i===null&&this.fail("a shorthand class cannot be a range endpoint"),i<n&&this.fail("character class range is out of order"),e.push([n,i])}else e.push([n,n])}return s?t?k([[0,65535]],!1):k([],!1):k(e,t)}parseClassAtom(t){let e=this.next();if(e!=="\\")return e.charCodeAt(0);let s=this.next();s===""&&this.fail("trailing backslash in character class");let n=j[s];if(n){if(n.negate){let i=0;for(let[l,o]of n.ranges)l>i&&t.push([i,l-1]),i=o+1;i<=65535&&t.push([i,65535])}else for(let i of n.ranges)t.push(i);return null}if(s in L)return L[s];if(s==="x")return this.readHex(2);if(s==="u")return this.readHex(4);if(s==="b")return 8;if(et.includes(s))return s.charCodeAt(0);this.fail(`unsupported escape '\\${s}' in character class`)}};var I=class extends Error{limit;constructor(t,e){super(`pattern /${e}/ expands past the ${t} instruction limit; reduce the counted repetition bounds`),this.name="ProgramTooLargeError",this.limit=t}};function q(r){let t=String(r.insts.length-1).length;return r.insts.map((e,s)=>`${String(s).padStart(t," ")}  ${F(e)}`).join(`
+`)}function F(r){switch(r.op){case"char":return`char ${JSON.stringify(String.fromCharCode(r.code))}`;case"class":return`class ${O(r.set)}`;case"split":return`split ${r.x}, ${r.y}`;case"jump":return`jump ${r.x}`;case"save":return`save ${r.slot}`;case"assert":return`assert ${r.at==="bol"?"^":"$"}`;case"mark":return`mark r${r.reg}`;case"progress":return`progress r${r.reg}`;case"clear":return`clear ${r.from}..${r.to}`;case"match":return"match"}}var st=1e4;function W(r,t=st){let{ast:e,groupCount:s}=D(r),n=new U(r,t);return n.emit({op:"save",slot:0}),n.node(e),n.emit({op:"save",slot:1}),n.emit({op:"match"}),{insts:n.insts,slotCount:2*(s+1),regCount:n.regCount,groupCount:s,source:r}}var U=class{insts=[];pattern;limit;regCount=0;constructor(t,e){this.pattern=t,this.limit=e}emit(t){if(this.insts.length>=this.limit)throw new I(this.limit,this.pattern);return this.insts.push(t),this.insts.length-1}get here(){return this.insts.length}newReg(){return this.regCount++}clearBodyGroups(t){let e=B(t);return e===null?!1:(this.emit({op:"clear",from:2*e[0],to:2*e[1]+1}),!0)}node(t){switch(t.kind){case"empty":return;case"char":this.emit({op:"char",code:t.code});return;case"class":this.emit({op:"class",set:t.set});return;case"assert":this.emit({op:"assert",at:t.at});return;case"concat":for(let e of t.parts)this.node(e);return;case"alt":this.alt(t.options);return;case"group":this.emit({op:"save",slot:2*t.index}),this.node(t.body),this.emit({op:"save",slot:2*t.index+1});return;case"noncap":this.node(t.body);return;case"repeat":this.repeat(t.body,t.min,t.max);return}}alt(t){let e=[];for(let s=0;s<t.length;s++){if(s===t.length-1){this.node(t[s]);break}let i=this.emit({op:"split",x:0,y:0});this.patchSplit(i,this.here,0),this.node(t[s]),e.push(this.emit({op:"jump",x:0})),this.patchSplit(i,void 0,this.here)}for(let s of e)this.patchJump(s,this.here)}repeat(t,e,s){if(s===0)return;if(e===0&&s===1/0)return this.star(t);if(e===1&&s===1/0)return this.plus(t);if(e===0&&s===1)return this.optional(t);for(let c=0;c<e;c++)this.clearBodyGroups(t),this.node(t);if(s===1/0){this.star(t);return}let n=s-e,i=v(t),l=i?this.newReg():-1,o=[];for(let c=0;c<n;c++){let u=this.emit({op:"split",x:0,y:0});o.push(u),this.patchSplit(u,this.here,0),i&&this.emit({op:"mark",reg:l}),this.clearBodyGroups(t),this.node(t),i&&this.emit({op:"progress",reg:l})}for(let c of o)this.patchSplit(c,void 0,this.here)}star(t){let e=v(t),s=e?this.newReg():-1,n=this.emit({op:"split",x:0,y:0});this.patchSplit(n,this.here,0),e&&this.emit({op:"mark",reg:s}),this.clearBodyGroups(t),this.node(t),e&&this.emit({op:"progress",reg:s}),this.emit({op:"jump",x:n}),this.patchSplit(n,void 0,this.here)}plus(t){if(!v(t)){let e=this.here;this.clearBodyGroups(t),this.node(t);let s=this.emit({op:"split",x:e,y:0});this.patchSplit(s,void 0,this.here);return}this.clearBodyGroups(t),this.node(t),this.star(t)}optional(t){let e=v(t),s=e?this.newReg():-1,n=this.emit({op:"split",x:0,y:0});this.patchSplit(n,this.here,0),e&&this.emit({op:"mark",reg:s}),this.clearBodyGroups(t),this.node(t),e&&this.emit({op:"progress",reg:s}),this.patchSplit(n,void 0,this.here)}patchSplit(t,e,s){let n=this.insts[t];if(n.op!=="split")throw new Error(`instruction ${t} is not a split`);e!==void 0&&(n.x=e),s!==void 0&&(n.y=s)}patchJump(t,e){let s=this.insts[t];if(s.op!=="jump")throw new Error(`instruction ${t} is not a jump`);s.x=e}};var R=class{dense;sparse;size=0;constructor(t){this.dense=new Int32Array(t),this.sparse=new Int32Array(t)}get capacity(){return this.dense.length}has(t){let e=this.sparse[t];return e<this.size&&this.dense[e]===t}add(t){let e=this.sparse[t];return e<this.size&&this.dense[e]===t?!1:(this.dense[this.size]=t,this.sparse[t]=this.size,this.size+=1,!0)}clear(){this.size=0}values(){return Array.from(this.dense.subarray(0,this.size))}};var N=class{visited;pcs;caps;size=0;constructor(t){this.visited=new R(t),this.pcs=new Int32Array(t),this.caps=new Array(t).fill(null)}begin(){this.visited.clear(),this.size=0}},A=class{program;listA;listB;stackPc;stackCaps;emptyCaps;regBase;stats=rt();trace=[];constructor(t){this.program=t;let e=t.insts.length;this.listA=new N(e),this.listB=new N(e),this.stackPc=new Int32Array(2*e+8),this.stackCaps=new Array(2*e+8).fill(null),this.regBase=t.slotCount,this.emptyCaps=new Int32Array(t.slotCount+t.regCount).fill(-1)}test(t,e=0){return this.run(t,{captures:!1,startAt:e})!==null}exec(t,e=0){let s=this.run(t,{captures:!0,startAt:e});return s===null?null:ct(t,s,this.program.groupCount)}run(t,e={}){let s=e.captures!==!1,n=e.startAt??0,i=e.trace===!0,l=this.program.insts,o=t.length;this.stats=rt(),i&&(this.trace=[]);let c=this.listA,u=this.listB,a=null;c.begin(),this.addThread(c,0,n,this.emptyCaps,t,s);for(let h=n;;h++){this.stats.positions+=1,c.size>this.stats.maxListSize&&(this.stats.maxListSize=c.size),i&&this.trace.push(c.visited.values());let p=h<o?t.charCodeAt(h):-1;u.begin();for(let m=0;m<c.size;m++){this.stats.charSteps+=1;let f=c.pcs[m],b=c.caps[m],x=l[f];if(x.op==="char")p===x.code&&this.addThread(u,f+1,h+1,b,t,s);else if(x.op==="class")p>=0&&V(x.set,p)&&this.addThread(u,f+1,h+1,b,t,s);else{a=b;break}}if(h>=o)break;a===null&&this.addThread(u,0,h+1,this.emptyCaps,t,s);let g=c;if(c=u,u=g,c.size===0&&a!==null)break}return a}addThread(t,e,s,n,i,l){this.stats.addCalls+=1;let o=this.program.insts,c=this.stackPc,u=this.stackCaps,a=0;for(c[a]=e,u[a]=n,a+=1;a>0;){a-=1;let h=c[a],p=u[a],g=o[h];if(g.op==="progress"){if(p[this.regBase+g.reg]===s||!t.visited.add(h))continue;this.stats.addsPerformed+=1,a=this.push(c,u,a,h+1,p);continue}if(!t.visited.add(h))continue;this.stats.addsPerformed+=1;let m=g;switch(m.op){case"jump":a=this.push(c,u,a,m.x,p);break;case"split":a=this.push(c,u,a,m.y,p),a=this.push(c,u,a,m.x,p);break;case"save":{let f=p;l&&p[m.slot]!==s&&(f=p.slice(),f[m.slot]=s,this.stats.capClones+=1),a=this.push(c,u,a,h+1,f);break}case"assert":{(m.at==="bol"?s===0:s===i.length)&&(a=this.push(c,u,a,h+1,p));break}case"clear":{let f=p;if(l){for(let b=m.from;b<=m.to;b++)p[b]!==-1&&(f===p&&(f=p.slice()),f[b]=-1);f!==p&&(this.stats.capClones+=1)}a=this.push(c,u,a,h+1,f);break}case"mark":{let f=this.regBase+m.reg,b=p;p[f]!==s&&(b=p.slice(),b[f]=s,this.stats.capClones+=1),a=this.push(c,u,a,h+1,b);break}default:t.pcs[t.size]=h,t.caps[t.size]=p,t.size+=1;break}}}push(t,e,s,n,i){if(s>=t.length)throw new Error("epsilon closure stack overflow: this is an engine bug");return t[s]=n,e[s]=i,s+1}};function rt(){return{addsPerformed:0,addCalls:0,charSteps:0,maxListSize:0,positions:0,capClones:0}}function ct(r,t,e){let s=[],n=[];for(let i=0;i<=e;i++){let l=t[2*i],o=t[2*i+1];l<0||o<0?(s.push(null),n.push(null)):(s.push([l,o]),n.push(r.slice(l,o)))}return{index:t[0],end:t[1],groups:s,slices:n}}var E=class{source;program;vm;constructor(t){this.source=t,this.program=W(t),this.vm=new A(this.program)}get groupCount(){return this.program.groupCount}get stats(){return this.vm.stats}get trace(){return this.vm.trace}test(t,e=0){return this.vm.test(t,e)}exec(t,e=0){return this.vm.exec(t,e)}run(t,e){return this.vm.run(t,e)}};var w=window.PIKEVM_RESULTS,d=r=>document.getElementById(r),K=[{label:'^(a|aa)+$  on  "a" x n + "b"',pattern:()=>"^(a|aa)+$",input:r=>`${"a".repeat(r)}b`},{label:'(a+)+$  on  "a" x n + "!"',pattern:()=>"(a+)+$",input:r=>`${"a".repeat(r)}!`},{label:'(x+x+)+y  on  "x" x n',pattern:()=>"(x+x+)+y",input:r=>"x".repeat(r)},{label:'^(a?){n}a{n}$  on  "a" x (n-1)',pattern:r=>`^(a?){${r}}a{${r}}$`,input:r=>"a".repeat(r-1)}],lt=`
+self.onmessage = (e) => {
+  const { pattern, input } = e.data;
+  const started = performance.now();
+  let result;
+  try {
+    result = new RegExp(pattern).test(input);
+  } catch (err) {
+    self.postMessage({ error: String(err) });
+    return;
+  }
+  self.postMessage({ elapsedMs: performance.now() - started, result });
+};
+`,P=2e3;function ut(r,t){return new Promise(e=>{let s=URL.createObjectURL(new Blob([lt],{type:"text/javascript"})),n=new Worker(s),i=!1,l=c=>{i||(i=!0,clearTimeout(o),n.terminate(),URL.revokeObjectURL(s),e(c))},o=setTimeout(()=>l(null),P);n.onmessage=c=>l(c.data.error?null:c.data),n.onerror=()=>l(null),n.postMessage({pattern:r,input:t})})}function M(r,t,e,s){r.classList.toggle("running",s),r.querySelector(".val").textContent=t,r.querySelector(".note").textContent=e}function pt(){let r=d("race-pattern");K.forEach((u,a)=>{let h=document.createElement("option");h.value=String(a),h.textContent=u.label,r.append(h)});let t=d("race-n"),e=d("race-subject"),s=d("race-go"),n=d("timer-ours"),i=d("timer-theirs"),l=d("race-history").querySelector("tbody"),o=()=>{let u=K[Number(r.value)],a=Number(t.value);e.textContent=`n = ${a}, pattern /${u.pattern(a)}/, subject length ${u.input(a).length}`};r.addEventListener("change",o),t.addEventListener("input",o),o();let c=async()=>{let u=K[Number(r.value)],a=Number(t.value),h=u.pattern(a),p=u.input(a);s.disabled=!0,M(n,"running","",!0),M(i,"running","worker started",!0);let g=new E(h);g.test(p);let m=performance.now(),f=g.test(p),b=performance.now()-m,x=g.stats.addsPerformed;M(n,`${b.toFixed(3)} ms`,`answered ${f}, ${x.toLocaleString()} threads admitted across ${(p.length+1).toLocaleString()} positions`,!1);let y=await ut(h,p);y===null?M(i,`> ${P} ms`,`no answer, worker killed at the ${P} ms deadline`,!1):M(i,`${y.elapsedMs.toFixed(3)} ms`,`answered ${y.result}`,!1);let Q=document.createElement("tr");for(Q.innerHTML=`<td class="num">${a}</td><td class="num">${b.toFixed(3)} ms</td><td class="num">${y===null?`&gt; ${P} ms`:`${y.elapsedMs.toFixed(3)} ms`}</td><td class="num">${x.toLocaleString()}</td>`,l.prepend(Q);l.children.length>8;)l.lastElementChild?.remove();s.disabled=!1};s.addEventListener("click",()=>{c()}),c()}var T=null,J=1600;function nt(r,t){let e=r.getContext("2d");if(!e)return;let s=getComputedStyle(document.documentElement),n=s.getPropertyValue("--grid").trim()||"#eee",i=s.getPropertyValue("--dot").trim()||"#1a7f5a",l=s.getPropertyValue("--line").trim()||"#ddd",o=Math.max(t.trace.length,1),c=Math.max(t.progLen,1),u=16,a=Math.max(Math.min((J-u*2)/o,40),2.5);r.width=J,r.height=Math.round(c*a+u*2);let h=(J-o*a)/2,p=u;e.clearRect(0,0,r.width,r.height),e.fillStyle=n;let g=a*.17,m=Math.max(a-g*2,1);for(let x=0;x<o;x++)for(let y=0;y<c;y++)e.fillRect(h+x*a+g,p+y*a+g,m,m);e.fillStyle=i;let f=Math.max(a*.3,1.2),b=Math.min(t.frame,o);for(let x=0;x<b;x++)for(let y of t.trace[x])e.beginPath(),e.arc(h+x*a+a/2,p+y*a+a/2,f,0,Math.PI*2),e.fill();if(b<o){e.strokeStyle=l,e.lineWidth=2;let x=h+b*a;e.beginPath(),e.moveTo(x,p-u*.5),e.lineTo(x,r.height-p+u*.5),e.stroke()}}function H(){let r=d("vis-canvas"),t=d("vis-error"),e=d("vis-stats");t.textContent="",T&&cancelAnimationFrame(T.raf);let s=d("vis-pattern").value,n=d("vis-input").value,i;try{i=new E(s)}catch(g){t.textContent=g instanceof Error?g.message:String(g);return}let l=i.run(n,{captures:!1,trace:!0})!==null,o=i.trace,c=i.program.insts.length,u=o.reduce((g,m)=>Math.max(g,m.length),0),a=(n.length+1)*c;e.textContent=`${l?"matched":"no match"}; ${c} instructions, ${n.length+1} positions, ${i.stats.addsPerformed.toLocaleString()} threads admitted out of a ${a.toLocaleString()} ceiling; widest column held ${u} of ${c} possible`;let h={trace:o,progLen:c,frame:0,raf:0};T=h;let p=()=>{nt(r,h),h.frame<=o.length&&(h.frame+=1,h.raf=requestAnimationFrame(p))};p()}function it(){let r=d("try-groups"),t=d("try-error"),e=d("try-program"),s=d("try-pattern").value,n=d("try-input").value;t.textContent="",r.textContent="",e.textContent="";let i;try{i=new E(s)}catch(o){t.textContent=o instanceof S||o instanceof Error?o.message:String(o);return}e.textContent=q(i.program);let l=i.exec(n);if(l===null){let o=document.createElement("div");o.className="group-row",o.innerHTML='<span class="gname">result</span><span class="gtext unset">no match</span>',r.append(o);return}l.groups.forEach((o,c)=>{let u=document.createElement("div");u.className="group-row";let a=c===0?"whole":`group ${c}`,h=o===null?"unset":`${o[0]}..${o[1]}`,p=l.slices[c];u.innerHTML=`<span class="gname">${a}</span><span class="gspan">${h}</span>`+(p===null?'<span class="gtext unset">did not participate</span>':`<span class="gtext">${ht(JSON.stringify(p))}</span>`),r.append(u)})}function ht(r){return r.replace(/[&<>"]/g,t=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[t])}function dt(){let r=d("provenance");if(!w){r.textContent="Benchmark provenance was not inlined into this build. The timings above were measured live in your browser.";return}let t=w.redos.filter(s=>s.native.status==="killed").length,e=w.hardware.memoryBytes?` with ${Math.round(w.hardware.memoryBytes/1024**3)} GiB of memory`:"";r.textContent=`The committed benchmark in bench/results.json was measured on ${w.hardware.cpu}${e} under Node ${w.node} on ${w.generatedAt.slice(0,10)}, with the native engine killed at ${w.cutoffMs} ms. ${t} of ${w.redos.length} rows reached that ceiling. The numbers you produce on this page are measured in your browser and will differ.`}pt();dt();d("vis-go").addEventListener("click",H);d("vis-pattern").addEventListener("keydown",r=>{r.key==="Enter"&&H()});d("vis-input").addEventListener("keydown",r=>{r.key==="Enter"&&H()});H();for(let r of["try-pattern","try-input"])d(r).addEventListener("input",it);it();window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{T&&nt(d("vis-canvas"),T)});})();
+</script>
+</body>
+</html>

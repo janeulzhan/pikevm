@@ -9,18 +9,15 @@ import type { ClassSet } from "./charclass.ts";
 import { describeClass } from "./charclass.ts";
 
 export type Inst =
-  | { op: "char"; code: number }
-  | { op: "class"; set: ClassSet }
+  | { op: "char"; code: number; next?: number }
+  | { op: "class"; set: ClassSet; next?: number }
   | { op: "split"; x: number; y: number } // x is the preferred branch
   | { op: "jump"; x: number }
   | { op: "save"; slot: number }
   | { op: "assert"; at: "bol" | "eol" }
-  // The progress register trio below enforces the ECMAScript rule that an
-  // iteration of a quantifier past its declared minimum must consume input.
-  // `mark` stores the position at which an iteration began and `progress` kills
-  // a thread whose iteration ended where it started.
-  | { op: "mark"; reg: number }
-  | { op: "progress"; reg: number }
+  // Dead end. Reached when an iteration of a quantifier past its declared
+  // minimum consumed nothing, which ECMAScript does not allow.
+  | { op: "fail" }
   // Resets the capture slots of every group inside a quantifier at the start
   // of each iteration, which is the other ECMAScript rule a plain Pike VM does
   // not reproduce: /(?:(a)|b)+/ on "ab" leaves group one unset, because the
@@ -32,8 +29,6 @@ export interface Program {
   readonly insts: readonly Inst[];
   /** Two slots per group, plus slots 0 and 1 for the whole match. */
   readonly slotCount: number;
-  /** Progress registers, one per quantifier that needs an empty-loop guard. */
-  readonly regCount: number;
   readonly groupCount: number;
   readonly source: string;
 }
@@ -58,12 +53,16 @@ export function disassemble(program: Program): string {
     .join("\n");
 }
 
+function jumpTo(next: number | undefined): string {
+  return next === undefined ? "" : ` -> ${next}`;
+}
+
 export function formatInst(inst: Inst): string {
   switch (inst.op) {
     case "char":
-      return `char ${JSON.stringify(String.fromCharCode(inst.code))}`;
+      return `char ${JSON.stringify(String.fromCharCode(inst.code))}${jumpTo(inst.next)}`;
     case "class":
-      return `class ${describeClass(inst.set)}`;
+      return `class ${describeClass(inst.set)}${jumpTo(inst.next)}`;
     case "split":
       return `split ${inst.x}, ${inst.y}`;
     case "jump":
@@ -72,10 +71,8 @@ export function formatInst(inst: Inst): string {
       return `save ${inst.slot}`;
     case "assert":
       return `assert ${inst.at === "bol" ? "^" : "$"}`;
-    case "mark":
-      return `mark r${inst.reg}`;
-    case "progress":
-      return `progress r${inst.reg}`;
+    case "fail":
+      return "fail";
     case "clear":
       return `clear ${inst.from}..${inst.to}`;
     case "match":

@@ -40,6 +40,8 @@ export const SLOT = {
   oracleSkipped: 12,
   done: 13,
   patternsWithGroups: 14,
+  /** Monotonic liveness tick. Moves in every phase, including the replay. */
+  ticks: 15,
 } as const;
 
 export const SLOT_COUNT = 16;
@@ -90,10 +92,15 @@ export function runRange(options: RangeOptions): void {
   for (let i = 0; i < from; i++) {
     genPattern(rng);
     genInput(rng);
+    // The replay does no matching, so the iteration heartbeat would sit still
+    // through it and the supervisor would read that as a stall. The liveness
+    // tick is what it actually watches, and it moves here too.
+    if ((i & 0xfff) === 0) counters[SLOT.ticks] += 1;
   }
 
   for (let i = from; i < to; i++) {
     counters[SLOT.heartbeat] = i;
+    counters[SLOT.ticks] += 1;
     const pattern = genPattern(rng);
     const input = genInput(rng);
     if (skip.has(i)) {

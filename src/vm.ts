@@ -69,8 +69,6 @@ export class Vm {
   private readonly stackPc: Int32Array;
   private readonly stackCaps: (Int32Array | null)[];
   private readonly emptyCaps: Int32Array;
-  /** Offset of the progress registers inside a thread's slot array. */
-  private readonly regBase: number;
   stats: VmStats = freshStats();
   /** Populated only when the trace option is set. */
   trace: number[][] = [];
@@ -82,8 +80,7 @@ export class Vm {
     this.listB = new ThreadList(len);
     this.stackPc = new Int32Array(2 * len + 8);
     this.stackCaps = new Array(2 * len + 8).fill(null);
-    this.regBase = program.slotCount;
-    this.emptyCaps = new Int32Array(program.slotCount + program.regCount).fill(-1);
+    this.emptyCaps = new Int32Array(program.slotCount).fill(-1);
   }
 
   test(input: string, startAt = 0): boolean {
@@ -129,11 +126,16 @@ export class Vm {
         const inst = insts[pc];
         if (inst.op === "char") {
           if (ch === inst.code) {
-            this.addThread(nlist, pc + 1, pos + 1, caps, input, captures);
+            // `next` is set only inside a guarded quantifier body, where
+            // consuming a character moves the thread into the copy of the body
+            // that is allowed to end the iteration.
+            const to = inst.next === undefined ? pc + 1 : inst.next;
+            this.addThread(nlist, to, pos + 1, caps, input, captures);
           }
         } else if (inst.op === "class") {
           if (ch >= 0 && classMatches(inst.set, ch)) {
-            this.addThread(nlist, pc + 1, pos + 1, caps, input, captures);
+            const to = inst.next === undefined ? pc + 1 : inst.next;
+            this.addThread(nlist, to, pos + 1, caps, input, captures);
           }
         } else {
           // `match`. Record it and cut every lower priority thread still in
@@ -186,25 +188,13 @@ export class Vm {
       sp -= 1;
       const pc = stackPc[sp];
       const caps = stackCaps[sp] as Int32Array;
-      const guard: Inst = insts[pc];
-
-      // A progress guard depends on the thread's own register, not just on the
-      // input position, so it has to run before the membership mark. Marking a
-      // pc that a failing thread never actually reaches would block a later,
-      // lower priority thread whose register still permits the iteration.
-      if (guard.op === "progress") {
-        if (caps[this.regBase + guard.reg] === pos) continue;
-        if (!list.visited.add(pc)) continue;
-        this.stats.addsPerformed += 1;
-        sp = this.push(stackPc, stackCaps, sp, pc + 1, caps);
-        continue;
-      }
-
-      // The guard, checked before any expansion. One visit per pc per position.
+      // The membership guard, checked before any expansion. One visit per
+      // program counter per input position: that is the whole linearity
+      // argument, and it is also why an empty loop body terminates.
       if (!list.visited.add(pc)) continue;
       this.stats.addsPerformed += 1;
 
-      const inst: Inst = guard;
+      const inst: Inst = insts[pc];
       switch (inst.op) {
         case "jump":
           sp = this.push(stackPc, stackCaps, sp, inst.x, caps);
@@ -241,17 +231,9 @@ export class Vm {
           sp = this.push(stackPc, stackCaps, sp, pc + 1, next);
           break;
         }
-        case "mark": {
-          const at = this.regBase + inst.reg;
-          let next = caps;
-          if (caps[at] !== pos) {
-            next = caps.slice();
-            next[at] = pos;
-            this.stats.capClones += 1;
-          }
-          sp = this.push(stackPc, stackCaps, sp, pc + 1, next);
+        case "fail":
+          // An iteration of a skippable quantifier that consumed nothing.
           break;
-        }
         default:
           // char, class and match all wait here until the stepping loop runs.
           list.pcs[list.size] = pc;

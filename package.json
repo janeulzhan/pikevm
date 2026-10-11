@@ -17,7 +17,8 @@
     "bench:ci": "node bench/ci.ts",
     "benchlock": "node tools/benchlock.ts",
     "benchlock:check": "node tools/benchlock.ts --check",
-    "build:demo": "node scripts/build-demo.ts"
+    "build:demo": "node scripts/build-demo.ts",
+    "sync:readme": "node scripts/sync-readme.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

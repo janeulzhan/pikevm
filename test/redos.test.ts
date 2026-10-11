@@ -3,9 +3,13 @@ import { describe, it } from "node:test";
 import { Regex } from "../src/index.ts";
 
 // Twelve patterns from the usual catastrophic-backtracking catalogue, each
-// paired with the input that makes a backtracking engine explode. The timing
-// assertion here is a loose ceiling used as a smoke test; the honest measured
-// numbers live in bench/results.json and in the README's wall-clock table.
+// paired with the input that makes a backtracking engine explode.
+//
+// What is asserted here is the amount of work the VM does, not how long it
+// takes. A wall-clock assertion tight enough to be meaningful is also tight
+// enough to fail on a loaded test runner, and it proves nothing the thread
+// count does not already prove. The measured timings live in
+// bench/results.json and in the README table that is explicitly not CI-gated.
 
 export const REDOS_CASES: { pattern: string; input: (n: number) => string; n: number }[] = [
   { pattern: "^(a|aa)+$", input: (n) => `${"a".repeat(n)}b`, n: 40 },
@@ -22,21 +26,38 @@ export const REDOS_CASES: { pattern: string; input: (n: number) => string; n: nu
   { pattern: "((a)*)*b", input: (n) => "a".repeat(n), n: 500 },
 ];
 
-describe("known ReDoS patterns complete promptly", () => {
+describe("known ReDoS patterns do a bounded amount of work", () => {
   for (const { pattern, input, n } of REDOS_CASES) {
-    it(`/${pattern}/ on ${n} characters finishes under 1 ms`, () => {
+    it(`/${pattern}/ on ${n} characters stays inside the linear bound`, () => {
       const re = new Regex(pattern);
       const subject = input(n);
-      re.test(subject); // warm the compiled program and the thread lists
-      const start = performance.now();
       re.test(subject);
-      const elapsed = performance.now() - start;
+      const progLen = re.program.insts.length;
+      const bound = (subject.length + 1) * progLen;
       assert.ok(
-        elapsed < 1,
-        `/${pattern}/ took ${elapsed.toFixed(4)} ms, above the 1 ms ceiling`,
+        re.stats.addsPerformed <= bound,
+        `/${pattern}/ admitted ${re.stats.addsPerformed} threads, above the ${bound} bound`,
+      );
+      assert.ok(
+        re.stats.maxListSize <= progLen,
+        `/${pattern}/ held ${re.stats.maxListSize} threads in one column, above ${progLen}`,
       );
     });
   }
+
+  it("finishes every catalogue pattern well inside a liveness ceiling", () => {
+    // Deliberately loose. This catches a hang, not a slowdown; the numbers
+    // worth quoting are measured by bench/redos.ts on known hardware.
+    for (const { pattern, input, n } of REDOS_CASES) {
+      const re = new Regex(pattern);
+      const subject = input(n);
+      re.test(subject);
+      const start = performance.now();
+      re.test(subject);
+      const elapsed = performance.now() - start;
+      assert.ok(elapsed < 100, `/${pattern}/ took ${elapsed.toFixed(2)} ms`);
+    }
+  });
 
   it("agrees with the platform engine on every case at a safe size", () => {
     for (const { pattern, input } of REDOS_CASES) {

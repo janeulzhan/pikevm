@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Regex } from "../src/index.ts";
 import type { InputSpec } from "./cases.ts";
-import { ORDINARY_CASES, REDOS_CASES, buildInput, inputFor, patternFor } from "./cases.ts";
+import { CATALOGUE, ORDINARY_CASES, REDOS_CASES, buildInput, inputFor, patternFor } from "./cases.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROBE = join(HERE, "native-probe.ts");
@@ -167,6 +167,16 @@ const ordinary = ORDINARY_CASES.map((c) => {
   };
 });
 
+// All twelve catalogue patterns, timed on our side only. The native engine is
+// not raced here: several of these do not return at all, which is the point of
+// the table above, and the four-pattern race already measures that frontier.
+const catalogue = CATALOGUE.map((c) => {
+  const ours = timeOurs(c.pattern, { fill: c.fill, n: c.n, suffix: c.suffix });
+  return { pattern: c.pattern, n: c.n, inputLength: ours.inputLength, ms: ours.ms, adds: ours.adds, progLen: ours.progLen };
+});
+const catalogueWorstMs = Math.max(...catalogue.map((c) => c.ms));
+process.stderr.write(`\ncatalogue: 12 patterns, slowest ${catalogueWorstMs.toFixed(4)} ms\n`);
+
 const results = {
   generatedAt: new Date().toISOString(),
   node: process.version,
@@ -183,7 +193,9 @@ const results = {
     "fuzz agreement, capture span agreement, program sizes and addthread counts.",
   redos: rows,
   ordinary,
+  catalogue,
   summary: {
+    catalogueWorstMs,
     nativeKilledCases: killedCount,
     nativeCutoffMs: CUTOFF_MS,
     maxOursMs: Math.max(...rows.map((r) => r.ours.ms)),

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pikevm: a linear-time regex engine</title>
+<meta name="description" content="Thompson NFA plus a Pike VM with capture groups. Watch the thread set and race it against the native engine.">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fbfbfa;
+  --panel: #ffffff;
+  --ink: #16181d;
+  --muted: #5d6470;
+  --line: #e2e3e0;
+  --accent: #1f6feb;
+  --ours: #1a7f5a;
+  --theirs: #b3401f;
+  --grid: #eceeea;
+  --dot: #1a7f5a;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --panel: #1b1e24;
+    --ink: #e8eaed;
+    --muted: #9aa2ad;
+    --line: #2b2f37;
+    --accent: #6ea8ff;
+    --ours: #4fc99a;
+    --theirs: #ff8f6b;
+    --grid: #22262d;
+    --dot: #4fc99a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 40px 20px 80px; }
+header h1 { font-size: 1.9rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+header p.tagline { margin: 0 0 4px; color: var(--muted); font-size: 1.02rem; }
+header p.meta { margin: 10px 0 0; color: var(--muted); font-size: 0.85rem; }
+header a { color: var(--accent); }
+section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 22px 22px 24px;
+  margin-top: 28px;
+}
+section h2 { font-size: 1.12rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+section p.lede { margin: 0 0 18px; color: var(--muted); font-size: 0.92rem; }
+label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
+select, input[type="text"], textarea {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 0.9rem;
+}
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+button {
+  padding: 9px 20px; border: 0; border-radius: 7px; background: var(--accent); color: #fff;
+  font-size: 0.92rem; font-weight: 600; cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+.row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+.row > div { flex: 1 1 200px; min-width: 150px; }
+.row > div.shrink { flex: 0 0 auto; min-width: 0; }
+.timers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+.timer { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+.timer .who { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.timer .val { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; margin-top: 4px; line-height: 1.2; }
+.timer .note { font-size: 0.78rem; color: var(--muted); margin-top: 4px; min-height: 2.4em; }
+.timer.ours .val { color: var(--ours); }
+.timer.theirs .val { color: var(--theirs); }
+.timer.running .val { opacity: 0.55; }
+canvas { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); margin-top: 12px; }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--dot); margin-right: 6px; vertical-align: 1px; }
+.legend span.grid::before { background: var(--grid); border-radius: 2px; }
+pre {
+  font-family: var(--mono); font-size: 0.82rem; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 7px; padding: 12px 14px; margin: 14px 0 0; overflow-x: auto; max-height: 300px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin-top: 14px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+td.num { font-family: var(--mono); text-align: right; }
+.groups { margin-top: 16px; }
+.group-row { display: flex; gap: 10px; align-items: baseline; font-family: var(--mono); font-size: 0.86rem; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.group-row .gname { color: var(--muted); min-width: 68px; }
+.group-row .gspan { color: var(--muted); min-width: 76px; font-size: 0.8rem; }
+.group-row .gtext { color: var(--ours); word-break: break-all; }
+.group-row .gtext.unset { color: var(--muted); font-style: italic; }
+.err { color: var(--theirs); font-family: var(--mono); font-size: 0.85rem; margin-top: 12px; }
+.statline { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); margin-top: 12px; }
+footer { margin-top: 36px; color: var(--muted); font-size: 0.84rem; }
+footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>pikevm</h1>
+    <p class="tagline">A regular expression engine that matches in one linear pass: Thompson's NFA construction, a Pike VM with capture groups, and a sparse set that admits each program counter once per input position.</p>
+    <p class="meta">Everything on this page runs in your browser. No regular expression library is involved on the pikevm side: the parser, the compiler and the VM are all in the inlined bundle. <a href="https://github.com/janeulzhan/pikevm">Source on GitHub</a>.</p>
+  </header>
+
+  <section id="race">
+    <h2>1. The race</h2>
+    <p class="lede">Both engines are asked the same question. The native engine runs inside a worker so this page can stop it; without that, a catastrophic pattern would lock the tab up for the rest of the afternoon.</p>
+    <div class="row">
+      <div>
+        <label for="race-pattern">Pattern</label>
+        <select id="race-pattern"></select>
+      </div>
+      <div class="shrink">
+        <label for="race-n">Input length</label>
+        <input type="range" id="race-n" min="4" max="48" value="26" step="1" style="width:220px">
+      </div>
+      <div class="shrink">
+        <label>&nbsp;</label>
+        <button id="race-go">Race</button>
+      </div>
+    </div>
+    <p class="statline" id="race-subject"></p>
+    <div class="timers">
+      <div class="timer ours" id="timer-ours">
+        <div class="who">pikevm</div>
+        <div class="val">&mdash;</div>
+        <div class="note"></div>
+      </div>
+      <div class="timer theirs" id="timer-theirs">
+        <div class="who">native RegExp</div>
+        <div class="val">&mdash;</div>
+        <div class="note"></div>
+      </div>
+    </div>
+    <table id="race-history"><thead><tr><th>n</th><th>pikevm</th><th>native</th><th>threads admitted</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section id="threads">
+    <h2>2. The thread set</h2>
+    <p class="lede">One column per input position, one row per program counter. A dot means that counter was live at that position. The claim is that no column can hold more dots than the program has instructions, and this is what that looks like.</p>
+    <div class="row">
+      <div>
+        <label for="vis-pattern">Pattern</label>
+        <input type="text" id="vis-pattern" value="(a|aa)+b" spellcheck="false">
+      </div>
+      <div>
+        <label for="vis-input">Input</label>
+        <input type="text" id="vis-input" value="aaaaaaaab" spellcheck="false">
+      </div>
+      <div class="shrink">
+        <label>&nbsp;</label>
+        <button id="vis-go">Step through</button>
+      </div>
+    </div>
+    <canvas id="vis-canvas" width="1800" height="700"></canvas>
+    <div class="legend">
+      <span>live thread</span>
+      <span class="grid">position by program counter</span>
+    </div>
+    <p class="statline" id="vis-stats"></p>
+    <p class="err" id="vis-error"></p>
+  </section>
+
+  <section id="tryit">
+    <h2>3. Capture groups</h2>
+    <p class="lede">Submatch extraction under the VM, not just a boolean. Capture slots are copied on write, so a thread shares its slots with its siblings until one of them actually writes.</p>
+    <div class="row">
+      <div>
+        <label for="try-pattern">Pattern</label>
+        <input type="text" id="try-pattern" value="(\d{4})-(\d{2})-(\d{2})" spellcheck="false">
+      </div>
+      <div>
+        <label for="try-input">Subject</label>
+        <input type="text" id="try-input" value="due on 2026-10-11, confirm" spellcheck="false">
+      </div>
+    </div>
+    <div class="groups" id="try-groups"></div>
+    <p class="err" id="try-error"></p>
+    <pre id="try-program"></pre>
+  </section>
+
+  <footer id="provenance"></footer>
+</div>
+<script>__RESULTS__</script>
+<script>__BUNDLE__</script>
+</body>
+</html>
