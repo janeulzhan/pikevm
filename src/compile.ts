@@ -6,6 +6,7 @@
 // argument order of `split`, which is what gives leftmost-first semantics.
 
 import type { Node } from "./ast.ts";
+import { groupRange, matchesEmpty } from "./ast.ts";
 import { parse } from "./parser.ts";
 import type { Inst, Program } from "./program.ts";
 import { ProgramTooLargeError } from "./program.ts";
@@ -23,6 +24,7 @@ export function compile(pattern: string, limit = MAX_PROGRAM_SIZE): Program {
   return {
     insts: c.insts,
     slotCount: 2 * (groupCount + 1),
+    regCount: c.regCount,
     groupCount,
     source: pattern,
   };
@@ -32,6 +34,7 @@ class Compiler {
   readonly insts: Inst[] = [];
   readonly pattern: string;
   readonly limit: number;
+  regCount = 0;
 
   constructor(pattern: string, limit: number) {
     this.pattern = pattern;
@@ -48,6 +51,22 @@ class Compiler {
 
   get here(): number {
     return this.insts.length;
+  }
+
+  /** One progress register per quantifier that can guard an empty iteration. */
+  newReg(): number {
+    return this.regCount++;
+  }
+
+  /**
+   * Emits the per-iteration capture reset for a quantifier body, if it holds
+   * any groups. Returns true when an instruction was emitted.
+   */
+  clearBodyGroups(body: Node): boolean {
+    const range = groupRange(body);
+    if (range === null) return false;
+    this.emit({ op: "clear", from: 2 * range[0], to: 2 * range[1] + 1 });
+    return true;
   }
 
   node(n: Node): void {
@@ -111,57 +130,104 @@ class Compiler {
     if (min === 1 && max === Infinity) return this.plus(body);
     if (min === 0 && max === 1) return this.optional(body);
 
-    // Counted repetition expands by duplicating the subtree: `min` mandatory
-    // copies, then either a trailing star (open range) or `max - min` nested
-    // optional copies. Every emit() call is checked against the size limit, so
-    // an expansion that would explode is rejected rather than consuming memory.
-    for (let i = 0; i < min; i++) this.node(body);
+    // Counted repetition expands by duplicating the body: `min` mandatory
+    // copies, then either a trailing star (open range) or `max - min` optional
+    // copies. Every emit() call is checked against the size limit, so an
+    // expansion that would explode is rejected instead of consuming memory.
+    //
+    // The first `min` iterations are allowed to match the empty string, which
+    // is why they carry no progress guard; every iteration after that is one
+    // the quantifier could legally skip, so it must consume input. That split
+    // is the ECMAScript RepeatMatcher rule, and reproducing it is what keeps
+    // the whole-match span in step with the platform engine on patterns such
+    // as /(a?|.+){1,2}/.
+    for (let i = 0; i < min; i++) {
+      this.clearBodyGroups(body);
+      this.node(body);
+    }
     if (max === Infinity) {
-      // a{2,} is a a a*
       this.star(body);
       return;
     }
     const optionalCopies = max - min;
-    // Nested so that a{1,3} accepts 1, 2 or 3 copies and prefers more of them.
+    const guarded = matchesEmpty(body);
+    const reg = guarded ? this.newReg() : -1;
     const splits: number[] = [];
     for (let i = 0; i < optionalCopies; i++) {
       const split = this.emit({ op: "split", x: 0, y: 0 });
       splits.push(split);
       this.patchSplit(split, this.here, 0);
+      if (guarded) this.emit({ op: "mark", reg });
+      this.clearBodyGroups(body);
       this.node(body);
+      if (guarded) this.emit({ op: "progress", reg });
     }
     for (const split of splits) this.patchSplit(split, undefined, this.here);
   }
 
-  //  L1: split L2, L3
-  //  L2: body
-  //      jump L1
-  //  L3:
+  // A body that cannot match the empty string can never trigger the
+  // ECMAScript empty-iteration rule, so the guard instructions are emitted
+  // only where they can change the answer. That keeps /a+/ and /\d*/ at the
+  // textbook three or four instructions and pays the extra cost just for the
+  // patterns that need it.
+
+  //  unguarded             guarded (body can match empty)
+  //  L1: split L2, L3      L1: split L2, L5
+  //  L2: body              L2: mark r
+  //      jump L1           L3: body
+  //  L3:                       progress r
+  //                            jump L1
+  //                        L5:
   star(body: Node): void {
+    const guarded = matchesEmpty(body);
+    const reg = guarded ? this.newReg() : -1;
     const top = this.emit({ op: "split", x: 0, y: 0 });
     this.patchSplit(top, this.here, 0);
+    if (guarded) this.emit({ op: "mark", reg });
+    this.clearBodyGroups(body);
     this.node(body);
+    if (guarded) this.emit({ op: "progress", reg });
     this.emit({ op: "jump", x: top });
     this.patchSplit(top, undefined, this.here);
   }
 
-  //  L1: body
-  //      split L1, L2
-  //  L2:
+  // When the body cannot match empty, one copy and a backward split is enough.
+  //
+  // When it can, the body is emitted twice: once unguarded for the first
+  // iteration, which ECMAScript allows to match empty, and once inside a
+  // guarded star for the rest. A single shared copy would not do, because the
+  // sparse set admits each program counter only once per input position, so
+  // "first iteration empty, second iteration consumes" would be unreachable
+  // for /(a?|x)+/ on "xx". Two copies give the two iterations distinct program
+  // counters and the platform engine's answer falls out.
   plus(body: Node): void {
-    const top = this.here;
+    if (!matchesEmpty(body)) {
+      const top = this.here;
+      this.clearBodyGroups(body);
+      this.node(body);
+      const split = this.emit({ op: "split", x: top, y: 0 });
+      this.patchSplit(split, undefined, this.here);
+      return;
+    }
+    this.clearBodyGroups(body);
     this.node(body);
-    const split = this.emit({ op: "split", x: top, y: 0 });
-    this.patchSplit(split, undefined, this.here);
+    this.star(body);
   }
 
-  //      split L1, L2
-  //  L1: body
-  //  L2:
+  //      split L1, L2          split L1, L2
+  //  L1: body              L1: mark r
+  //  L2:                       body
+  //                            progress r
+  //                        L2:
   optional(body: Node): void {
+    const guarded = matchesEmpty(body);
+    const reg = guarded ? this.newReg() : -1;
     const split = this.emit({ op: "split", x: 0, y: 0 });
     this.patchSplit(split, this.here, 0);
+    if (guarded) this.emit({ op: "mark", reg });
+    this.clearBodyGroups(body);
     this.node(body);
+    if (guarded) this.emit({ op: "progress", reg });
     this.patchSplit(split, undefined, this.here);
   }
 

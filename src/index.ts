@@ -1,7 +1,7 @@
 // Public surface of the engine.
 
 export type { Node } from "./ast.ts";
-export { RegexSyntaxError, matchesEmpty, countGroups, walk } from "./ast.ts";
+export { RegexSyntaxError, matchesEmpty, countGroups, groupRange, walk } from "./ast.ts";
 export { parse } from "./parser.ts";
 export type { ClassSet } from "./charclass.ts";
 export { classMatches, describeClass } from "./charclass.ts";

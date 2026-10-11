@@ -69,6 +69,8 @@ export class Vm {
   private readonly stackPc: Int32Array;
   private readonly stackCaps: (Int32Array | null)[];
   private readonly emptyCaps: Int32Array;
+  /** Offset of the progress registers inside a thread's slot array. */
+  private readonly regBase: number;
   stats: VmStats = freshStats();
   /** Populated only when the trace option is set. */
   trace: number[][] = [];
@@ -80,7 +82,8 @@ export class Vm {
     this.listB = new ThreadList(len);
     this.stackPc = new Int32Array(2 * len + 8);
     this.stackCaps = new Array(2 * len + 8).fill(null);
-    this.emptyCaps = new Int32Array(program.slotCount).fill(-1);
+    this.regBase = program.slotCount;
+    this.emptyCaps = new Int32Array(program.slotCount + program.regCount).fill(-1);
   }
 
   test(input: string, startAt = 0): boolean {
@@ -183,11 +186,25 @@ export class Vm {
       sp -= 1;
       const pc = stackPc[sp];
       const caps = stackCaps[sp] as Int32Array;
+      const guard: Inst = insts[pc];
+
+      // A progress guard depends on the thread's own register, not just on the
+      // input position, so it has to run before the membership mark. Marking a
+      // pc that a failing thread never actually reaches would block a later,
+      // lower priority thread whose register still permits the iteration.
+      if (guard.op === "progress") {
+        if (caps[this.regBase + guard.reg] === pos) continue;
+        if (!list.visited.add(pc)) continue;
+        this.stats.addsPerformed += 1;
+        sp = this.push(stackPc, stackCaps, sp, pc + 1, caps);
+        continue;
+      }
+
       // The guard, checked before any expansion. One visit per pc per position.
       if (!list.visited.add(pc)) continue;
       this.stats.addsPerformed += 1;
 
-      const inst: Inst = insts[pc];
+      const inst: Inst = guard;
       switch (inst.op) {
         case "jump":
           sp = this.push(stackPc, stackCaps, sp, inst.x, caps);
@@ -209,6 +226,30 @@ export class Vm {
         case "assert": {
           const holds = inst.at === "bol" ? pos === 0 : pos === input.length;
           if (holds) sp = this.push(stackPc, stackCaps, sp, pc + 1, caps);
+          break;
+        }
+        case "clear": {
+          let next = caps;
+          if (captures) {
+            for (let slot = inst.from; slot <= inst.to; slot++) {
+              if (caps[slot] === -1) continue;
+              if (next === caps) next = caps.slice();
+              next[slot] = -1;
+            }
+            if (next !== caps) this.stats.capClones += 1;
+          }
+          sp = this.push(stackPc, stackCaps, sp, pc + 1, next);
+          break;
+        }
+        case "mark": {
+          const at = this.regBase + inst.reg;
+          let next = caps;
+          if (caps[at] !== pos) {
+            next = caps.slice();
+            next[at] = pos;
+            this.stats.capClones += 1;
+          }
+          sp = this.push(stackPc, stackCaps, sp, pc + 1, next);
           break;
         }
         default:

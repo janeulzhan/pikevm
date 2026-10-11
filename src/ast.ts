@@ -78,6 +78,23 @@ export function matchesEmpty(node: Node): boolean {
   }
 }
 
+/**
+ * Inclusive range of capture group numbers inside a subtree, or null when it
+ * holds none. Groups are numbered in source order, so a subtree always owns a
+ * contiguous range and one clear instruction can reset all of its slots.
+ */
+export function groupRange(node: Node): [number, number] | null {
+  let lo = Infinity;
+  let hi = -Infinity;
+  walk(node, (x) => {
+    if (x.kind === "group") {
+      if (x.index < lo) lo = x.index;
+      if (x.index > hi) hi = x.index;
+    }
+  });
+  return hi < 0 ? null : [lo, hi];
+}
+
 /** Number of capture groups in the tree. */
 export function countGroups(node: Node): number {
   let n = 0;
