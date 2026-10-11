@@ -2,19 +2,34 @@
   "seed": 1592594996,
   "iterations": 1000000,
   "deadlineMs": 2000,
-  "pairs": 999940,
-  "acceptance": 999940,
-  "acceptanceAgreed": 999940,
-  "wholeMatchAgreed": 999940,
-  "spanCompared": 999940,
-  "spanAgreed": 999940,
+  "pairs": 999938,
+  "acceptance": 999938,
+  "acceptanceAgreed": 999938,
+  "wholeMatchAgreed": 999938,
+  "spanCompared": 999938,
+  "spanAgreed": 999938,
   "spanSubsetCompared": 611004,
   "spanSubsetAgreed": 611004,
-  "matched": 631971,
-  "patternsWithGroups": 512867,
+  "matched": 631969,
+  "pairsWithGroups": 513805,
   "skippedTooLarge": 0,
-  "oracleSkipped": 60,
+  "oracleSkipped": 62,
   "divergences": [],
-  "newStalls": [],
-  "elapsedMs": 110253.897
+  "newStalls": [
+    {
+      "iteration": 797942,
+      "pattern": "\\S(-)_{0}|x|(?:((?:[\\d_]0){1}1(?:a\\s)|0--|0*([a-c]?[abc])[a-c0-1]?){1}|.?|.*){1,}c-{2,}",
+      "input": "1a_\ncbca-a-bc --bc_",
+      "oursMs": 0.16575000000011642,
+      "oursResult": true
+    },
+    {
+      "iteration": 897335,
+      "pattern": "\\S|(?:-|(.(\\D?)|x$)*(c?b{0,})|1 (?:0 ){0,})+b\\(",
+      "input": " aac c _1_0  \na1-x",
+      "oursMs": 0.15241699999023695,
+      "oursResult": true
+    }
+  ],
+  "elapsedMs": 125444.620583
 }

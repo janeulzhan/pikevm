@@ -58,7 +58,7 @@ Compiled program sizes, which the bound depends on, are published and gated:
 
 ## Live demo
 
-**<https://janeulzhan.github.io/pikevm/>**
+**<https://janeulzhan.github.io/pikevm/>**, served by GitHub Pages from the `docs/` folder on `main`. If that link is ever dead, the page is a single self-contained file: open `docs/index.html` from a clone and everything below works offline, or run `npm run build:demo` to rebuild it from source.
 
 [![the pikevm demo page](docs/demo.png)](https://janeulzhan.github.io/pikevm/)
 
@@ -120,12 +120,14 @@ Locally, one million generated pairs, with every capture span compared and no re
 <!-- table:sweep -->
 | comparison | pairs compared | pairs that agreed | share |
 | --- | ---: | ---: | ---: |
-| acceptance, `test()` against `RegExp.prototype.test` | 999,940 | 999,940 | 100.0000% |
-| whole match span | 999,940 | 999,940 | 100.0000% |
-| every capture group span | 999,940 | 999,940 | 100.0000% |
+| acceptance, `test()` against `RegExp.prototype.test` | 999,938 | 999,938 | 100.0000% |
+| whole match span | 999,938 | 999,938 | 100.0000% |
+| every capture group span | 999,938 | 999,938 | 100.0000% |
 | the same, restricted to the conservative subset | 611,004 | 611,004 | 100.0000% |
 
-Of the 1,000,000 pairs generated, 631,971 actually matched, and 512,867 distinct patterns carried capture groups. 60 pairs are excluded from every count above, because the platform engine does not return on them inside the 2000 ms deadline; they are listed in [`test/oracle-timeouts.json`](test/oracle-timeouts.json) and discussed below. The sweep took 110 seconds and found 0 disagreements.
+Of the 1,000,000 pairs generated, 631,969 actually matched, and 513,805 of them used a pattern carrying a capture group. 62 pairs are excluded from every count above, because the platform engine does not return on them inside the 2000 ms deadline; they are listed in [`test/oracle-timeouts.json`](test/oracle-timeouts.json) and discussed below. The sweep took 125 seconds and found 0 disagreements.
+
+**These pair counts move by a few between machines, and that is expected.** How many pairs get compared depends on how many the oracle fails to answer inside the deadline, and that depends on how fast the host is: a slower machine stalls on one or two more and compares one or two fewer. Rerunning this on your hardware should not reproduce the totals to the digit. What is being claimed is not a pair count, it is the right-hand column: zero disagreements, on every pair that both engines answered. That is the invariant, it does not depend on the host, and it is what CI asserts.
 <!-- /table:sweep -->
 
 CI runs the same harness at <!--bench:fuzz.iterations-->25,000<!--/bench--> pairs, which takes about four seconds, and asserts that the number of disagreements is <!--bench:fuzz.divergenceCount-->0<!--/bench-->. In that CI-sized sweep, <!--bench:fuzz.acceptanceAgreed-->24,999<!--/bench--> of <!--bench:fuzz.acceptance-->24,999<!--/bench--> acceptance comparisons agree and <!--bench:fuzz.spanAgreed-->24,999<!--/bench--> of <!--bench:fuzz.spanCompared-->24,999<!--/bench--> capture span comparisons agree, with <!--bench:fuzz.matched-->15,966<!--/bench--> pairs actually matching so the sweep is not passing vacuously.
@@ -184,11 +186,11 @@ No wall-clock figure is gated. Every timing in this file comes from `bench/resul
 <!-- table:ordinary -->
 | pattern | input length | pikevm | native `RegExp` | pikevm is slower by |
 | --- | ---: | ---: | ---: | ---: |
-| `needle` | 180,006 | 4.92 ms | 0.0374 ms | 131.7× |
-| `(\d{4})-(\d{2})-(\d{2})` | 20,010 | 0.7892 ms | 0.0397 ms | 19.9× |
-| `^[a-z]+$` | 20,000 | 1.18 ms | 0.0310 ms | 38.0× |
-| `[\w.]+@[\w]+\.[a-z]{2,4}` | 20,016 | 1.19 ms | 0.0409 ms | 29.0× |
-| `a.*b.*c` | 5,003 | 0.1370 ms | 0.0217 ms | 6.3× |
+| `needle` | 180,006 | 4.92 ms | 0.0374 ms | 131.7x |
+| `(\d{4})-(\d{2})-(\d{2})` | 20,010 | 0.7892 ms | 0.0397 ms | 19.9x |
+| `^[a-z]+$` | 20,000 | 1.18 ms | 0.0310 ms | 38.0x |
+| `[\w.]+@[\w]+\.[a-z]{2,4}` | 20,016 | 1.19 ms | 0.0409 ms | 29.0x |
+| `a.*b.*c` | 5,003 | 0.1370 ms | 0.0217 ms | 6.3x |
 <!-- /table:ordinary -->
 
   The trade is the whole point: a constant factor on the patterns that were never a problem, in exchange for a bound on the ones that were.

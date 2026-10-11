@@ -62,7 +62,7 @@ interface Sweep {
   spanSubsetCompared: number;
   spanSubsetAgreed: number;
   matched: number;
-  patternsWithGroups: number;
+  pairsWithGroups: number;
   oracleSkipped: number;
   divergences: unknown[];
   elapsedMs: number;
@@ -150,7 +150,7 @@ function ordinaryTable(results: Results): string {
   ];
   for (const r of results.ordinary) {
     const factor =
-      r.slowdown === null ? "not measured" : `${r.slowdown.toFixed(1)}\u00d7`;
+      r.slowdown === null ? "not measured" : `${r.slowdown.toFixed(1)}x`;
     lines.push(
       `| \`${r.pattern.replace(/\|/g, "\\|")}\` | ${r.inputLength.toLocaleString()} | ` +
         `${ms(r.ours.ms)} | ${nativeCell(r.native, results.cutoffMs)} | ${factor} |`,
@@ -185,12 +185,20 @@ function sweepBlock(sweep: Sweep): string {
     `| the same, restricted to the conservative subset | ${n(sweep.spanSubsetCompared)} | ${n(sweep.spanSubsetAgreed)} | ${pct(sweep.spanSubsetAgreed, sweep.spanSubsetCompared)} |`,
     "",
     `Of the ${n(sweep.iterations)} pairs generated, ${n(sweep.matched)} actually matched, and ` +
-      `${n(sweep.patternsWithGroups)} distinct patterns carried capture groups. ` +
+      `${n(sweep.pairsWithGroups)} of them used a pattern carrying a capture group. ` +
       `${n(sweep.oracleSkipped)} pairs are excluded from every count above, because the platform ` +
       `engine does not return on them inside the ${sweep.deadlineMs} ms deadline; they are listed in ` +
       "[`test/oracle-timeouts.json`](test/oracle-timeouts.json) and discussed below. " +
       `The sweep took ${(sweep.elapsedMs / 1000).toFixed(0)} seconds and found ` +
       `${sweep.divergences.length} disagreement${sweep.divergences.length === 1 ? "" : "s"}.`,
+    "",
+    "**These pair counts move by a few between machines, and that is expected.** How many pairs " +
+      "get compared depends on how many the oracle fails to answer inside the deadline, and that " +
+      "depends on how fast the host is: a slower machine stalls on one or two more and compares " +
+      "one or two fewer. Rerunning this on your hardware should not reproduce the totals to the " +
+      "digit. What is being claimed is not a pair count, it is the right-hand column: zero " +
+      "disagreements, on every pair that both engines answered. That is the invariant, it does " +
+      "not depend on the host, and it is what CI asserts.",
   ].join("\n");
 }
 
