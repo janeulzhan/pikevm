@@ -29,6 +29,7 @@ export function parse(pattern: string): ParseResult {
   const p = new Parser(pattern);
   const ast = p.parseAlt();
   if (!p.atEnd()) {
+    if (p.peek() === ")") p.fail("unmatched ')'");
     p.fail(`unexpected '${p.peek()}'`);
   }
   return { ast, groupCount: p.groupCount };
