@@ -39,7 +39,7 @@ export const SLOT = {
   divergences: 11,
   oracleSkipped: 12,
   done: 13,
-  patternsWithGroups: 14,
+  pairsWithGroups: 14,
   /** Monotonic liveness tick. Moves in every phase, including the replay. */
   ticks: 15,
 } as const;
@@ -95,7 +95,6 @@ export function runRange(options: RangeOptions): void {
   };
   const skip = options.skip ?? new Set<number>();
   const maxDivergences = options.maxDivergences ?? 20;
-  const seen = new Set<string>();
   const rng = new Rng(seed);
 
   // The generator is a pure function of the seed and the iteration index, so a
@@ -152,10 +151,13 @@ export function runRange(options: RangeOptions): void {
     }
 
     work[SLOT.pairs] += 1;
-    if (!seen.has(pattern)) {
-      seen.add(pattern);
-      if (groupCount(ast) > 0) work[SLOT.patternsWithGroups] += 1;
-    }
+    // Counted per pair rather than per distinct pattern. A distinct-pattern
+    // set would have to live inside this function, which restarts whenever the
+    // supervisor terminates a stalled worker, so the same pattern would be
+    // counted once per segment and the total would drift with the host's speed.
+    // A per-pair count is a pure function of the generated pairs and answers
+    // the question that matters anyway: is the sweep exercising captures.
+    if (groupCount(ast) > 0) work[SLOT.pairsWithGroups] += 1;
 
     const theirs = new RegExp(pattern, "d");
 

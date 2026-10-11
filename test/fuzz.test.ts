@@ -30,8 +30,8 @@ describe("differential fuzz against the platform engine", () => {
       `only ${report.matched} of ${CI_ITERATIONS} pairs matched; the generator is not exercising much`,
     );
     assert.ok(
-      report.patternsWithGroups > 5000,
-      `only ${report.patternsWithGroups} distinct patterns carried capture groups`,
+      report.pairsWithGroups > 5000,
+      `only ${report.pairsWithGroups} pairs carried a capture group`,
     );
   });
 

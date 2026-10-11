@@ -69,7 +69,7 @@ export const TOLERANCES: Record<string, Tolerance> = {
   "fuzz.spanSubsetAgreed": { rel: 0.002 },
   "fuzz.wholeMatchAgreed": { rel: 0.002 },
   "fuzz.matched": { rel: 0.002 },
-  "fuzz.patternsWithGroups": { rel: 0.002 },
+  "fuzz.pairsWithGroups": { rel: 0.002 },
   "fuzz.oracleSkipped": { abs: 8 },
 };
 
@@ -185,6 +185,40 @@ export function rewrite(text: string, metrics: Record<string, number>): string {
   return out + text.slice(cursor);
 }
 
+export class UnknownFlagError extends Error {
+  constructor(flag: string) {
+    super(
+      `unknown flag ${JSON.stringify(flag)}. ` +
+        `benchlock accepts only ${[...KNOWN_FLAGS].sort().join(", ")}`,
+    );
+    this.name = "UnknownFlagError";
+  }
+}
+
+/** Every flag the CLI understands. Anything else is refused. */
+export const KNOWN_FLAGS: ReadonlySet<string> = new Set(["--check", "--json"]);
+
+export interface ParsedArgs {
+  check: boolean;
+  json: boolean;
+}
+
+/**
+ * Parses the command line, refusing anything unrecognised.
+ *
+ * This matters more than it looks. The default mode of this tool rewrites
+ * README.md, and the --check mode is what CI relies on to catch drift. A typo
+ * in the flag used to fall through to the write path, so `benchlock --heck`
+ * would silently rewrite the very artefact it is supposed to be guarding and
+ * report success. A gate that edits its subject when misused is not a gate.
+ */
+export function parseArgs(argv: readonly string[]): ParsedArgs {
+  for (const arg of argv) {
+    if (!KNOWN_FLAGS.has(arg)) throw new UnknownFlagError(arg);
+  }
+  return { check: argv.includes("--check"), json: argv.includes("--json") };
+}
+
 export interface Drift {
   key: string;
   committed: number;
@@ -229,8 +263,15 @@ export function collect(): Record<string, number> {
 }
 
 if (import.meta.filename === process.argv[1]) {
-  const checkOnly = process.argv.includes("--check");
-  const asJson = process.argv.includes("--json");
+  let args: ParsedArgs;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    console.error(`benchlock: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(2);
+  }
+  const checkOnly = args.check;
+  const asJson = args.json;
   const metrics = collect();
 
   if (asJson) {

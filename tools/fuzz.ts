@@ -53,7 +53,7 @@ export interface SweepReport {
   spanSubsetCompared: number;
   spanSubsetAgreed: number;
   matched: number;
-  patternsWithGroups: number;
+  pairsWithGroups: number;
   skippedTooLarge: number;
   oracleSkipped: number;
   divergences: Divergence[];
@@ -181,7 +181,7 @@ export async function sweep(options: SweepOptions): Promise<SweepReport> {
     spanSubsetCompared: counters[SLOT.spanSubsetCompared],
     spanSubsetAgreed: counters[SLOT.spanSubsetAgreed],
     matched: counters[SLOT.matched],
-    patternsWithGroups: counters[SLOT.patternsWithGroups],
+    pairsWithGroups: counters[SLOT.pairsWithGroups],
     skippedTooLarge: counters[SLOT.skippedTooLarge],
     oracleSkipped: counters[SLOT.oracleSkipped],
     divergences,
@@ -276,7 +276,7 @@ export function formatReport(r: SweepReport): string {
     `span-exact    ${r.spanAgreed.toLocaleString()} / ${r.spanCompared.toLocaleString()} agreed (${pct(r.spanAgreed, r.spanCompared)})`,
     `  subset only ${r.spanSubsetAgreed.toLocaleString()} / ${r.spanSubsetCompared.toLocaleString()} with no capture group under a quantifier`,
     `matched       ${r.matched.toLocaleString()} pairs actually matched`,
-    `patterns      ${r.patternsWithGroups.toLocaleString()} distinct patterns carrying capture groups`,
+    `captures      ${r.pairsWithGroups.toLocaleString()} pairs whose pattern carried a capture group`,
     `skipped       ${r.skippedTooLarge.toLocaleString()} past the program size ceiling`,
     `oracle stalls ${r.oracleSkipped.toLocaleString()} pairs the platform engine did not answer in ${r.deadlineMs} ms`,
   ];
