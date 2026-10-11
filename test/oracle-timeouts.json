@@ -1,0 +1,9 @@
+{
+  "deadlineMs": 2000,
+  "note": "Pattern and input pairs, by generator seed and iteration index, on which the platform regular expression engine did not return inside the deadline. Found by tools/fuzz.ts, not curated by hand. Listed so that agreement counts are reproducible; the engine under test answers all of them.",
+  "seeds": {
+    "1592594996": [
+      24320
+    ]
+  }
+}
