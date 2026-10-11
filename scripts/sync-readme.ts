@@ -177,7 +177,7 @@ function sweepBlock(sweep: Sweep): string {
   const n = (v: number) => v.toLocaleString();
   const pct = (a: number, b: number) => (b === 0 ? "n/a" : `${((100 * a) / b).toFixed(4)}%`);
   return [
-    "| comparison | pairs compared | pairs that agreed | |",
+    "| comparison | pairs compared | pairs that agreed | share |",
     "| --- | ---: | ---: | ---: |",
     `| acceptance, \`test()\` against \`RegExp.prototype.test\` | ${n(sweep.acceptance)} | ${n(sweep.acceptanceAgreed)} | ${pct(sweep.acceptanceAgreed, sweep.acceptance)} |`,
     `| whole match span | ${n(sweep.acceptanceAgreed)} | ${n(sweep.wholeMatchAgreed)} | ${pct(sweep.wholeMatchAgreed, sweep.acceptanceAgreed)} |`,
