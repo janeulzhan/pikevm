@@ -94,6 +94,9 @@ function initRace(): void {
     opt.textContent = c.label;
     select.append(opt);
   });
+  // Default to the pattern that reaches the deadline soonest, so the first
+  // thing the page shows is the result that matters.
+  select.value = "1";
 
   const slider = $<HTMLInputElement>("race-n");
   const subject = $("race-subject");
@@ -121,16 +124,28 @@ function initRace(): void {
     setTimer(oursTimer, "running", "", true);
     setTimer(theirsTimer, "running", "worker started", true);
 
+    // Browsers clamp performance.now() to about 100 microseconds, which is
+    // coarser than a single run of this engine on these inputs. Repeat until
+    // the total is comfortably above the clamp and divide, and say so.
     const re = new Regex(pattern);
-    re.test(input);
+    for (let i = 0; i < 5; i++) re.test(input);
+    let runs = 0;
     const t0 = performance.now();
-    const oursResult = re.test(input);
-    const oursMs = performance.now() - t0;
+    let elapsed = 0;
+    let oursResult = false;
+    do {
+      oursResult = re.test(input);
+      runs += 1;
+      elapsed = performance.now() - t0;
+    } while (elapsed < 8 && runs < 100000);
+    const oursMs = elapsed / runs;
     const adds = re.stats.addsPerformed;
     setTimer(
       oursTimer,
-      `${oursMs.toFixed(3)} ms`,
-      `answered ${oursResult}, ${adds.toLocaleString()} threads admitted across ${(input.length + 1).toLocaleString()} positions`,
+      `${oursMs.toFixed(4)} ms`,
+      `answered ${oursResult}, ${adds.toLocaleString()} threads admitted across ` +
+        `${(input.length + 1).toLocaleString()} positions; mean of ${runs.toLocaleString()} runs, ` +
+        "because the browser clock is coarser than one run",
       false,
     );
 
@@ -149,7 +164,7 @@ function initRace(): void {
     const row = document.createElement("tr");
     row.innerHTML =
       `<td class="num">${n}</td>` +
-      `<td class="num">${oursMs.toFixed(3)} ms</td>` +
+      `<td class="num">${oursMs.toFixed(4)} ms</td>` +
       `<td class="num">${native === null ? `&gt; ${NATIVE_DEADLINE_MS} ms` : `${native.elapsedMs.toFixed(3)} ms`}</td>` +
       `<td class="num">${adds.toLocaleString()}</td>`;
     history.prepend(row);
@@ -171,7 +186,7 @@ interface VisState {
   trace: number[][];
   progLen: number;
   frame: number;
-  raf: number;
+  timer: number;
 }
 
 let vis: VisState | null = null;
@@ -233,7 +248,7 @@ function runVis(): void {
   const err = $("vis-error");
   const stats = $("vis-stats");
   err.textContent = "";
-  if (vis) cancelAnimationFrame(vis.raf);
+  if (vis) clearTimeout(vis.timer);
 
   const pattern = $<HTMLInputElement>("vis-pattern").value;
   const input = $<HTMLInputElement>("vis-input").value;
@@ -255,13 +270,16 @@ function runVis(): void {
     `${re.stats.addsPerformed.toLocaleString()} threads admitted out of a ${bound.toLocaleString()} ceiling; ` +
     `widest column held ${widest} of ${progLen} possible`;
 
-  const state: VisState = { trace, progLen, frame: 0, raf: 0 };
+  const state: VisState = { trace, progLen, frame: 0, timer: 0 };
   vis = state;
+  // A timer rather than requestAnimationFrame, so the animation still runs
+  // under a headless browser taking the screenshot for the README.
+  const perFrame = Math.max(1, Math.ceil(trace.length / 40));
   const step = () => {
     drawThreads(canvas, state);
     if (state.frame <= trace.length) {
-      state.frame += 1;
-      state.raf = requestAnimationFrame(step);
+      state.frame += perFrame;
+      state.timer = setTimeout(step, 45) as unknown as number;
     }
   };
   step();
