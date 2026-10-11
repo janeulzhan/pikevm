@@ -1,9 +1,12 @@
 // The NFA program executed by the Pike VM.
 //
-// Six core opcodes come straight from Thompson's construction as presented by
-// Pike and by Cox: Char, Class, Split, Jump, Save, Match. One extra zero-width
-// opcode, Assert, carries '^' and '$'; it consumes no input and so does not
-// affect any of the linearity arguments.
+// Six opcodes come straight from Thompson's construction as presented by Pike
+// and by Cox: char, class, split, jump, save, match. Three more are needed to
+// match ECMAScript exactly, and none of them consumes input, so none of them
+// affects the linearity argument: `assert` carries '^' and '$', `clear` resets
+// the capture slots of groups inside a quantifier at the start of each
+// iteration, and `fail` is the dead end an iteration reaches when it was
+// allowed to be skipped and consumed nothing.
 
 import type { ClassSet } from "./charclass.ts";
 import { describeClass } from "./charclass.ts";

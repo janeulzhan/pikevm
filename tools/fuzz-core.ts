@@ -80,6 +80,19 @@ export function pairAt(seed: number, iteration: number): { pattern: string; inpu
 
 export function runRange(options: RangeOptions): void {
   const { seed, from, to, counters } = options;
+  // Counters are staged locally and published once per completed iteration.
+  // The supervisor can terminate this thread in the middle of an iteration, so
+  // publishing increments as they happen would leave a half-counted pair in the
+  // shared totals and make the published figures off by a few.
+  const work = new Int32Array(counters.length);
+  work.set(counters);
+  const publish = () => {
+    const beat = counters[SLOT.heartbeat];
+    const ticks = counters[SLOT.ticks];
+    counters.set(work);
+    counters[SLOT.heartbeat] = beat;
+    counters[SLOT.ticks] = ticks;
+  };
   const skip = options.skip ?? new Set<number>();
   const maxDivergences = options.maxDivergences ?? 20;
   const seen = new Set<string>();
@@ -104,7 +117,8 @@ export function runRange(options: RangeOptions): void {
     const pattern = genPattern(rng);
     const input = genInput(rng);
     if (skip.has(i)) {
-      counters[SLOT.oracleSkipped] += 1;
+      work[SLOT.oracleSkipped] += 1;
+      publish();
       continue;
     }
 
@@ -115,7 +129,8 @@ export function runRange(options: RangeOptions): void {
       ours = new Regex(pattern);
     } catch (err) {
       if (err instanceof ProgramTooLargeError) {
-        counters[SLOT.skippedTooLarge] += 1;
+        work[SLOT.skippedTooLarge] += 1;
+        publish();
         continue;
       }
       if (err instanceof RegexSyntaxError) {
@@ -129,23 +144,24 @@ export function runRange(options: RangeOptions): void {
           ours: `parse error: ${err.message}`,
           theirs: "inside the generator grammar",
         });
-        if (counters[SLOT.divergences] >= maxDivergences) return;
+        publish();
+        if (work[SLOT.divergences] >= maxDivergences) return;
         continue;
       }
       throw err;
     }
 
-    counters[SLOT.pairs] += 1;
+    work[SLOT.pairs] += 1;
     if (!seen.has(pattern)) {
       seen.add(pattern);
-      if (groupCount(ast) > 0) counters[SLOT.patternsWithGroups] += 1;
+      if (groupCount(ast) > 0) work[SLOT.patternsWithGroups] += 1;
     }
 
     const theirs = new RegExp(pattern, "d");
 
     const oursAccepts = ours.test(input);
     const theirsAccepts = theirs.test(input);
-    counters[SLOT.acceptance] += 1;
+    work[SLOT.acceptance] += 1;
     if (oursAccepts !== theirsAccepts) {
       report(options, counters, {
         kind: "acceptance",
@@ -155,11 +171,12 @@ export function runRange(options: RangeOptions): void {
         ours: String(oursAccepts),
         theirs: String(theirsAccepts),
       });
-      if (counters[SLOT.divergences] >= maxDivergences) return;
+      publish();
+      if (work[SLOT.divergences] >= maxDivergences) return;
       continue;
     }
-    counters[SLOT.acceptanceAgreed] += 1;
-    if (oursAccepts) counters[SLOT.matched] += 1;
+    work[SLOT.acceptanceAgreed] += 1;
+    if (oursAccepts) work[SLOT.matched] += 1;
 
     const oursMatch = ours.exec(input);
     const theirsMatch = theirs.exec(input);
@@ -178,19 +195,20 @@ export function runRange(options: RangeOptions): void {
         ours: oursWhole,
         theirs: theirsWhole,
       });
-      if (counters[SLOT.divergences] >= maxDivergences) return;
+      publish();
+      if (work[SLOT.divergences] >= maxDivergences) return;
       continue;
     }
-    counters[SLOT.wholeMatchAgreed] += 1;
+    work[SLOT.wholeMatchAgreed] += 1;
 
     const inSubset = isSpanComparable(ast);
-    counters[SLOT.spanCompared] += 1;
-    if (inSubset) counters[SLOT.spanSubsetCompared] += 1;
+    work[SLOT.spanCompared] += 1;
+    if (inSubset) work[SLOT.spanSubsetCompared] += 1;
     const oursSpans = spansOf(oursMatch, ours.groupCount);
     const theirsSpans = platformSpans(theirsMatch, ours.groupCount);
     if (oursSpans === theirsSpans) {
-      counters[SLOT.spanAgreed] += 1;
-      if (inSubset) counters[SLOT.spanSubsetAgreed] += 1;
+      work[SLOT.spanAgreed] += 1;
+      if (inSubset) work[SLOT.spanSubsetAgreed] += 1;
     } else {
       report(options, counters, {
         kind: "span",
@@ -200,8 +218,12 @@ export function runRange(options: RangeOptions): void {
         ours: oursSpans,
         theirs: theirsSpans,
       });
-      if (counters[SLOT.divergences] >= maxDivergences) return;
+      if (work[SLOT.divergences] >= maxDivergences) {
+        publish();
+        return;
+      }
     }
+    publish();
   }
 }
 
